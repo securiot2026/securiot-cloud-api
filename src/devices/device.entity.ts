@@ -1,5 +1,6 @@
 import {
   Column,
+  CreateDateColumn,
   Entity,
   JoinColumn,
   ManyToOne,
@@ -26,4 +27,7 @@ export class Device {
 
   @Column()
   zoneId: string;
+
+  @CreateDateColumn()
+  createdAt: Date;
 }
