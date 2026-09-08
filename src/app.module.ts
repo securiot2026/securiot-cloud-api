@@ -9,7 +9,7 @@ import { TelemetryModule } from './telemetry/telemetry.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-    TypeOrmModule.forRoot(buildDataSourceOptions()),
+    TypeOrmModule.forRootAsync({ useFactory: () => buildDataSourceOptions() }),
     UsersModule,
     AuthModule,
     TelemetryModule,
