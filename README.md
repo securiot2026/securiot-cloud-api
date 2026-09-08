@@ -39,6 +39,10 @@ SEED_USER_PASSWORD=ChangeMe123!
 SEED_DEVICE_API_KEY=
 
 PORT=3000
+
+# Device online/offline window: a device is "online" if it has a Reading
+# within this many seconds. Optional, defaults to 300 if unset.
+DEVICE_ONLINE_WINDOW_SECONDS=300
 ```
 
 If you don't have Postgres installed locally, set `DB_DRIVER=sqlite` and `DB_SQLITE_PATH` to any local file path (e.g. `./data/securiot.sqlite`) - no server setup required.
