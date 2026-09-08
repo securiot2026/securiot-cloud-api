@@ -1,6 +1,20 @@
 # SecurIoT Cloud API
 
-NestJS + TypeORM Cloud API for SecurIoT Phase 1: JWT auth, an idempotent telemetry ingest endpoint, a filterable telemetry history endpoint, and Swagger/OpenAPI docs.
+NestJS + TypeORM Cloud API for SecurIoT: JWT auth, zones, devices, an idempotent telemetry ingest endpoint, alert generation, and Swagger/OpenAPI docs.
+
+## Where this runs
+
+This service runs centrally, on a VPS or any always-on host reachable from
+the internet, since the Web App and Mobile App both talk to it directly over
+HTTPS from wherever their users are. It is the only piece of SecurIoT meant
+to be public-facing.
+
+It is not where camera detection (YOLO) runs, that happens on the Edge API,
+one instance per installation site, on the same LAN as that site's
+ESP32-CAM. See `repos/securiot-edge-api/README.md`, "Where this runs", for
+why. Each Edge API instance talks to this Cloud API as an outbound HTTPS
+client (the relay), using `CLOUD_DEVICE_API_KEY`, the same way any device
+does, this service never opens a connection back to an Edge API.
 
 ## Prerequisites
 
@@ -68,9 +82,14 @@ Swagger/OpenAPI UI is served at `http://localhost:3000/api/docs`, covering both 
 
 ## Endpoints
 
-- `POST /api/v1/auth/login` - email/password login, returns `{ access_token }` (JWT, 1h expiry)
-- `POST /api/v1/telemetry` - ingest a reading, guarded by the `X-Device-Key` header (device API key, not a user JWT). Idempotent on `reading_id`: retried POSTs with the same `reading_id` never create a second row.
-- `GET /api/v1/telemetry` - list readings, guarded by a JWT (`Authorization: Bearer <token>`), filterable via `device_id`, `zone_id`, `from`, `to` query params.
+All endpoints below live under `/api/v1`. Everything except `POST /auth/login` and telemetry ingest is guarded by a JWT (`Authorization: Bearer <token>`); telemetry ingest is guarded by `X-Device-Key` instead (device API key, not a user JWT).
+
+- `POST /auth/login` - email/password login, returns `{ access_token }` (JWT, 1h expiry)
+- `POST /zones`, `GET /zones`, `GET /zones/:id`, `PATCH /zones/:id`, `DELETE /zones/:id` - zones owned by the authenticated user
+- `POST /devices`, `GET /devices`, `GET /devices/:id` - devices, each linked to one of the user's zones; the create response is the only place the device's `apiKey` is ever shown in full
+- `POST /telemetry` - ingest a reading, guarded by `X-Device-Key`. Idempotent on `reading_id`: retried POSTs with the same `reading_id` never create a second row
+- `GET /telemetry` - list readings, filterable via `device_id`, `zone_id`, `from`, `to` query params
+- `GET /alerts` - list alerts for the user's zones, filterable via `zone_id`, `device_id`, `status`; generated automatically from telemetry (see "Scope" below)
 
 ## Testing
 
@@ -82,4 +101,4 @@ The e2e suite spins up the full Nest app against an in-memory SQLite database an
 
 ## Scope
 
-Zone/Device CRUD is out of scope for this phase (Phase 2) - the seeded Zone/Device are hardcoded records with no management endpoints.
+Alert rules are intentionally minimal: `AlertsService.evaluateRule` currently fires one rule, `door_contact_open` (a `door_contact` reading with value `open` creates a `medium` severity alert), triggered inline every time `POST /telemetry` ingests a matching reading. Adding a new rule means adding a branch there, no separate rules engine.
