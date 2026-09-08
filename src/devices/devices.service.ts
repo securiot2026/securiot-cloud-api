@@ -4,8 +4,11 @@ import { Repository } from 'typeorm';
 import * as crypto from 'crypto';
 import { Device } from './device.entity';
 import { Zone } from '../zones/zone.entity';
+import { Reading } from '../telemetry/entities/reading.entity';
 import { CreateDeviceDto } from './dto/create-device.dto';
-import { DeviceCreatedResponseDto, DeviceResponseDto } from './dto/device-response.dto';
+import { DeviceCreatedResponseDto, DeviceResponseDto, DeviceStatusResponseDto } from './dto/device-response.dto';
+
+const DEFAULT_ONLINE_WINDOW_SECONDS = 300;
 
 @Injectable()
 export class DevicesService {
@@ -14,6 +17,8 @@ export class DevicesService {
     private readonly devicesRepository: Repository<Device>,
     @InjectRepository(Zone)
     private readonly zonesRepository: Repository<Zone>,
+    @InjectRepository(Reading)
+    private readonly readingsRepository: Repository<Reading>,
   ) {}
 
   async create(dto: CreateDeviceDto, ownerId: string): Promise<DeviceCreatedResponseDto> {
@@ -42,6 +47,31 @@ export class DevicesService {
 
     const devices = await query.getMany();
     return devices.map((device) => this.toResponse(device));
+  }
+
+  async findOneForOwner(id: string, ownerId: string): Promise<Device> {
+    const device = await this.devicesRepository.findOne({ where: { id }, relations: { zone: true } });
+    if (!device || device.zone.ownerId !== ownerId) {
+      throw new NotFoundException('Device not found');
+    }
+    return device;
+  }
+
+  async getStatus(device: Device): Promise<DeviceStatusResponseDto> {
+    const lastReading = await this.readingsRepository.findOne({
+      where: { deviceId: device.id },
+      order: { recordedAt: 'DESC' },
+    });
+
+    const windowMs =
+      Number(process.env.DEVICE_ONLINE_WINDOW_SECONDS || DEFAULT_ONLINE_WINDOW_SECONDS) * 1000;
+    const isOnline = !!lastReading && Date.now() - new Date(lastReading.recordedAt).getTime() <= windowMs;
+
+    return {
+      ...this.toResponse(device),
+      isOnline,
+      lastReading: lastReading ?? null,
+    };
   }
 
   private toResponse(device: Device): DeviceResponseDto {
