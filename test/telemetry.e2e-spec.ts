@@ -8,6 +8,7 @@ import { AppModule } from '../src/app.module';
 import { User } from '../src/users/user.entity';
 import { Zone } from '../src/zones/zone.entity';
 import { Device } from '../src/devices/device.entity';
+import { Alert } from '../src/alerts/alert.entity';
 
 describe('Telemetry (e2e)', () => {
   let app: INestApplication;
@@ -16,6 +17,7 @@ describe('Telemetry (e2e)', () => {
   let zoneB: Zone;
   let deviceB: Device;
   let jwt: string;
+  let alertRepo: Repository<Alert>;
 
   beforeAll(async () => {
     process.env.DB_DRIVER = 'sqlite';
@@ -36,6 +38,7 @@ describe('Telemetry (e2e)', () => {
     const zoneRepo = moduleFixture.get<Repository<Zone>>(getRepositoryToken(Zone));
     const deviceRepo = moduleFixture.get<Repository<Device>>(getRepositoryToken(Device));
     const userRepo = moduleFixture.get<Repository<User>>(getRepositoryToken(User));
+    alertRepo = moduleFixture.get<Repository<Alert>>(getRepositoryToken(Alert));
 
     const passwordHash = await bcrypt.hash('ChangeMe123!', 10);
     const owner = await userRepo.save(
@@ -156,5 +159,82 @@ describe('Telemetry (e2e)', () => {
   it('rejects GET without a valid JWT', async () => {
     const response = await request(app.getHttpServer()).get('/api/v1/telemetry');
     expect(response.status).toBe(401);
+  });
+
+  it('creates a medium-severity alert when a door_contact reading reports open', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/api/v1/telemetry')
+      .set('X-Device-Key', 'valid-api-key')
+      .send({
+        reading_id: 'reading-door-open',
+        sensor_type: 'door_contact',
+        value: { state: 'open' },
+        recorded_at: new Date().toISOString(),
+      });
+
+    expect(response.status).toBe(201);
+
+    const alert = await alertRepo.findOne({ where: { readingId: response.body.id } });
+    expect(alert).not.toBeNull();
+    expect(alert?.severity).toBe('medium');
+    expect(alert?.status).toBe('active');
+    expect(alert?.zoneId).toBe(zoneA.id);
+    expect(alert?.deviceId).toBe(device.id);
+  });
+
+  it('does not create an alert when a door_contact reading reports closed', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/api/v1/telemetry')
+      .set('X-Device-Key', 'valid-api-key')
+      .send({
+        reading_id: 'reading-door-closed',
+        sensor_type: 'door_contact',
+        value: { state: 'closed' },
+        recorded_at: new Date().toISOString(),
+      });
+
+    expect(response.status).toBe(201);
+
+    const alert = await alertRepo.findOne({ where: { readingId: response.body.id } });
+    expect(alert).toBeNull();
+  });
+
+  it('does not create an alert for non door_contact sensor readings', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/api/v1/telemetry')
+      .set('X-Device-Key', 'valid-api-key')
+      .send({
+        reading_id: 'reading-motion',
+        sensor_type: 'motion',
+        value: { detected: true },
+        recorded_at: new Date().toISOString(),
+      });
+
+    expect(response.status).toBe(201);
+
+    const alert = await alertRepo.findOne({ where: { readingId: response.body.id } });
+    expect(alert).toBeNull();
+  });
+
+  it('does not create a second alert when the same door_contact/open reading is resent', async () => {
+    const payload = {
+      reading_id: 'reading-door-open-dup',
+      sensor_type: 'door_contact',
+      value: { state: 'open' },
+      recorded_at: new Date().toISOString(),
+    };
+
+    const first = await request(app.getHttpServer())
+      .post('/api/v1/telemetry')
+      .set('X-Device-Key', 'valid-api-key')
+      .send(payload);
+
+    await request(app.getHttpServer())
+      .post('/api/v1/telemetry')
+      .set('X-Device-Key', 'valid-api-key')
+      .send(payload);
+
+    const alerts = await alertRepo.find({ where: { readingId: first.body.id } });
+    expect(alerts).toHaveLength(1);
   });
 });
