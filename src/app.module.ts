@@ -5,6 +5,7 @@ import { buildDataSourceOptions } from './config/typeorm.config';
 import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
 import { TelemetryModule } from './telemetry/telemetry.module';
+import { ZonesModule } from './zones/zones.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { TelemetryModule } from './telemetry/telemetry.module';
     UsersModule,
     AuthModule,
     TelemetryModule,
+    ZonesModule,
   ],
 })
 export class AppModule {}
