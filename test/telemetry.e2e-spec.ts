@@ -37,18 +37,18 @@ describe('Telemetry (e2e)', () => {
     const deviceRepo = moduleFixture.get<Repository<Device>>(getRepositoryToken(Device));
     const userRepo = moduleFixture.get<Repository<User>>(getRepositoryToken(User));
 
-    zoneA = await zoneRepo.save(zoneRepo.create({ name: 'Zone A' }));
-    zoneB = await zoneRepo.save(zoneRepo.create({ name: 'Zone B' }));
+    const passwordHash = await bcrypt.hash('ChangeMe123!', 10);
+    const owner = await userRepo.save(
+      userRepo.create({ email: 'e2e@securiot.local', passwordHash }),
+    );
+
+    zoneA = await zoneRepo.save(zoneRepo.create({ name: 'Zone A', ownerId: owner.id }));
+    zoneB = await zoneRepo.save(zoneRepo.create({ name: 'Zone B', ownerId: owner.id }));
     device = await deviceRepo.save(
       deviceRepo.create({ name: 'Device A', apiKey: 'valid-api-key', zoneId: zoneA.id }),
     );
     deviceB = await deviceRepo.save(
       deviceRepo.create({ name: 'Device B', apiKey: 'valid-api-key-b', zoneId: zoneB.id }),
-    );
-
-    const passwordHash = await bcrypt.hash('ChangeMe123!', 10);
-    await userRepo.save(
-      userRepo.create({ email: 'e2e@securiot.local', passwordHash }),
     );
 
     const loginResponse = await request(app.getHttpServer())
