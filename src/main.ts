@@ -6,6 +6,15 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  // Without this, the browser blocks every request from the Web/Mobile App
+  // origin, no error surfaces server-side, it just looks like a network
+  // failure client-side. CORS_ORIGIN is a comma-separated allowlist; falls
+  // back to "*" only when unset, tighten it in production via the env var.
+  const corsOrigin = process.env.CORS_ORIGIN;
+  app.enableCors({
+    origin: corsOrigin ? corsOrigin.split(',').map((o) => o.trim()) : '*',
+  });
+
   app.setGlobalPrefix('api');
   app.enableVersioning({
     type: VersioningType.URI,

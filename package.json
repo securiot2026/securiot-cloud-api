@@ -9,7 +9,7 @@
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:prod": "node dist/main",
-    "seed": "ts-node -r tsconfig-paths/register src/database/seed.ts",
+    "seed": "ts-node -r dotenv/config -r tsconfig-paths/register src/database/seed.ts",
     "lint": "eslint \"{src,test}/**/*.ts\"",
     "test": "jest",
     "test:e2e": "jest --config ./test/jest-e2e.json"
