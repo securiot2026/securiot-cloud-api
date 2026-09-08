@@ -42,6 +42,7 @@ export class TelemetryController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'List telemetry readings, optionally filtered by device/zone/date range' })
   @ApiResponse({ status: 200, description: 'List of readings matching the filters' })
+  @ApiResponse({ status: 400, description: 'Validation failed on query parameters' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   findAll(@Query() query: QueryReadingsDto): Promise<Reading[]> {
     return this.telemetryService.findAll(query);
