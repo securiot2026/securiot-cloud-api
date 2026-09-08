@@ -35,7 +35,7 @@ async function seed() {
   const zoneRepo = AppDataSource.getRepository(Zone);
   let zone = await zoneRepo.findOne({ where: { name: 'Front Entrance' } });
   if (!zone) {
-    zone = await zoneRepo.save(zoneRepo.create({ name: 'Front Entrance' }));
+    zone = await zoneRepo.save(zoneRepo.create({ name: 'Front Entrance', ownerId: user.id }));
     console.log(`Seeded zone: ${zone.name} (${zone.id})`);
   } else {
     console.log(`Zone already exists: ${zone.name} (${zone.id})`);
