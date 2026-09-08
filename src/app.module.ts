@@ -7,6 +7,7 @@ import { AuthModule } from './auth/auth.module';
 import { TelemetryModule } from './telemetry/telemetry.module';
 import { ZonesModule } from './zones/zones.module';
 import { DevicesModule } from './devices/devices.module';
+import { AlertsModule } from './alerts/alerts.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { DevicesModule } from './devices/devices.module';
     TelemetryModule,
     ZonesModule,
     DevicesModule,
+    AlertsModule,
   ],
 })
 export class AppModule {}

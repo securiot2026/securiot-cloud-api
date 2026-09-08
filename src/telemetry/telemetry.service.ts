@@ -5,12 +5,14 @@ import { Reading } from './entities/reading.entity';
 import { CreateReadingDto } from './dto/create-reading.dto';
 import { QueryReadingsDto } from './dto/query-readings.dto';
 import { Device } from '../devices/device.entity';
+import { AlertsService } from '../alerts/alerts.service';
 
 @Injectable()
 export class TelemetryService {
   constructor(
     @InjectRepository(Reading)
     private readonly readingsRepository: Repository<Reading>,
+    private readonly alertsService: AlertsService,
   ) {}
 
   async ingest(dto: CreateReadingDto, device: Device): Promise<Reading> {
@@ -29,9 +31,13 @@ export class TelemetryService {
       .orIgnore()
       .execute();
 
-    return this.readingsRepository.findOneOrFail({
+    const reading = await this.readingsRepository.findOneOrFail({
       where: { readingId: dto.reading_id },
     });
+
+    await this.alertsService.evaluateRule(reading);
+
+    return reading;
   }
 
   findAll(query: QueryReadingsDto): Promise<Reading[]> {

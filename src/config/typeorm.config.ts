@@ -4,8 +4,9 @@ import { User } from '../users/user.entity';
 import { Zone } from '../zones/zone.entity';
 import { Device } from '../devices/device.entity';
 import { Reading } from '../telemetry/entities/reading.entity';
+import { Alert } from '../alerts/alert.entity';
 
-const entities = [User, Zone, Device, Reading];
+const entities = [User, Zone, Device, Reading, Alert];
 
 export function buildDataSourceOptions(): DataSourceOptions {
   const driver = process.env.DB_DRIVER || 'postgres';
