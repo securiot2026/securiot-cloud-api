@@ -169,6 +169,38 @@ export class DevicesService {
     );
   }
 
+  async getCommandStatus(id: string, ownerId: string, actuator: string, res: Response): Promise<void> {
+    const device = await this.findOneForOwner(id, ownerId);
+
+    if (!['pan_tilt', 'light', 'buzzer'].includes(actuator)) {
+      res.status(400).json({ error: 'actuator must be one of pan_tilt, light, buzzer' });
+      return;
+    }
+
+    if (!device.edgeUrl) {
+      res.status(400).json({ error: 'edgeUrl not configured for this device' });
+      return;
+    }
+
+    await this.callDeviceEdgeApi(
+      device,
+      `/commands/${id}/status?actuator=${encodeURIComponent(actuator)}`,
+      { method: 'GET' },
+      res,
+    );
+  }
+
+  async getOccupancy(id: string, ownerId: string, res: Response): Promise<void> {
+    const device = await this.findOneForOwner(id, ownerId);
+
+    if (!device.edgeUrl) {
+      res.status(400).json({ error: 'edgeUrl not configured for this device' });
+      return;
+    }
+
+    await this.callDeviceEdgeApi(device, `/occupancy/${id}`, { method: 'GET' }, res);
+  }
+
   async getLatestFrame(id: string, ownerId: string, res: Response): Promise<void> {
     const device = await this.findOneForOwner(id, ownerId);
 

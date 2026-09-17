@@ -196,6 +196,49 @@ export class DevicesController {
     await this.devicesService.getLatestFrame(id, user.sub, res);
   }
 
+  @Get(':id/commands/status')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Get the delivery status (pending/delivered/none) of the most recent manual command for an actuator',
+    description: "CTRL-05: lets the Mobile/Web App show pending -> entregado feedback after queuing a command.",
+  })
+  @ApiResponse({ status: 200, description: 'Command status' })
+  @ApiResponse({ status: 400, description: 'Missing/invalid actuator query param, or edgeUrl not configured for this device' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({ status: 404, description: 'Device not found or not owned by the authenticated user' })
+  @ApiResponse({ status: 502, description: 'Could not reach the device Edge API, or it rejected the admin credential' })
+  async getCommandStatus(
+    @Param('id') id: string,
+    @Query('actuator') actuator: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<void> {
+    const user = (req as Request & { user: JwtPayload }).user;
+    await this.devicesService.getCommandStatus(id, user.sub, actuator, res);
+  }
+
+  @Get(':id/occupancy')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: "Get the device's zone occupancy counter for today, proxied live from its Edge API",
+    description: 'EXTR-02: current (casi real-time) occupancy count, reset daily at UTC midnight on the Edge side.',
+  })
+  @ApiResponse({ status: 200, description: 'Occupancy count' })
+  @ApiResponse({ status: 400, description: 'edgeUrl not configured for this device' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({ status: 404, description: 'Device not found or not owned by the authenticated user' })
+  @ApiResponse({ status: 502, description: 'Could not reach the device Edge API, or it rejected the admin credential' })
+  async getOccupancy(
+    @Param('id') id: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<void> {
+    const user = (req as Request & { user: JwtPayload }).user;
+    await this.devicesService.getOccupancy(id, user.sub, res);
+  }
+
   @Get(':id/rules')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
