@@ -28,6 +28,9 @@ export class Device {
   @Column()
   zoneId: string;
 
+  @Column({ type: 'varchar', nullable: true })
+  edgeUrl: string | null;
+
   @CreateDateColumn()
   createdAt: Date;
 }

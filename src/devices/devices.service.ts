@@ -1,14 +1,28 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadGatewayException, BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as crypto from 'crypto';
+import { Response } from 'express';
 import { Device } from './device.entity';
 import { Zone } from '../zones/zone.entity';
 import { Reading } from '../telemetry/entities/reading.entity';
 import { CreateDeviceDto } from './dto/create-device.dto';
+import { UpdateDeviceDto } from './dto/update-device.dto';
 import { DeviceCreatedResponseDto, DeviceResponseDto, DeviceStatusResponseDto } from './dto/device-response.dto';
 
 const DEFAULT_ONLINE_WINDOW_SECONDS = 300;
+
+const BLOCKED_EDGE_URL_HOSTS = (hostname: string): boolean =>
+  hostname === 'localhost' ||
+  hostname.startsWith('127.') ||
+  hostname.startsWith('169.254.') ||
+  hostname === '0.0.0.0';
+
+interface UploadedFile {
+  buffer: Buffer;
+  mimetype: string;
+  originalname: string;
+}
 
 @Injectable()
 export class DevicesService {
@@ -57,6 +71,66 @@ export class DevicesService {
     return device;
   }
 
+  async update(id: string, dto: UpdateDeviceDto, ownerId: string): Promise<DeviceResponseDto> {
+    const device = await this.findOneForOwner(id, ownerId);
+
+    if (dto.edgeUrl !== undefined) {
+      const hostname = new URL(dto.edgeUrl).hostname;
+      if (BLOCKED_EDGE_URL_HOSTS(hostname)) {
+        throw new BadRequestException('edgeUrl cannot point to a loopback or link-local host');
+      }
+      device.edgeUrl = dto.edgeUrl;
+    }
+
+    const saved = await this.devicesRepository.save(device);
+    return this.toResponse(saved);
+  }
+
+  async enrollFace(
+    id: string,
+    ownerId: string,
+    name: string,
+    images: UploadedFile[],
+    res: Response,
+  ): Promise<void> {
+    const device = await this.findOneForOwner(id, ownerId);
+
+    if (!device.edgeUrl) {
+      res.status(400).json({ error: 'edgeUrl not configured for this device' });
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('name', name);
+    for (const image of images) {
+      formData.append(
+        'images',
+        new Blob([new Uint8Array(image.buffer)], { type: image.mimetype }),
+        image.originalname,
+      );
+    }
+
+    let edgeResponse: globalThis.Response;
+    try {
+      edgeResponse = await fetch(`${device.edgeUrl}/faces`, {
+        method: 'POST',
+        headers: { 'X-Admin-Key': process.env.EDGE_ADMIN_API_KEY || '' },
+        body: formData,
+      });
+    } catch {
+      throw new BadGatewayException('Could not reach the device Edge API');
+    }
+
+    const edgeBody = await edgeResponse.json().catch(() => ({}));
+
+    if (edgeResponse.status === 401) {
+      res.status(502).json({ error: 'Edge API rejected the admin credential — check EDGE_ADMIN_API_KEY' });
+      return;
+    }
+
+    res.status(edgeResponse.status).json(edgeBody);
+  }
+
   async getStatus(device: Device): Promise<DeviceStatusResponseDto> {
     const lastReading = await this.readingsRepository.findOne({
       where: { deviceId: device.id },
@@ -80,6 +154,7 @@ export class DevicesService {
       name: device.name,
       zoneId: device.zoneId,
       createdAt: device.createdAt,
+      edgeUrl: device.edgeUrl,
     };
   }
 

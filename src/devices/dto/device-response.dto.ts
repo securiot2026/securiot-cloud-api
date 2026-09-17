@@ -13,6 +13,9 @@ export class DeviceResponseDto {
 
   @ApiProperty()
   createdAt: Date;
+
+  @ApiProperty({ description: 'Base URL of this device\'s Edge API, or null if not configured', nullable: true })
+  edgeUrl: string | null;
 }
 
 export class DeviceCreatedResponseDto extends DeviceResponseDto {
