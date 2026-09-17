@@ -21,6 +21,7 @@ import { DevicesService } from './devices.service';
 import { CreateDeviceDto } from './dto/create-device.dto';
 import { UpdateDeviceDto } from './dto/update-device.dto';
 import { SetFaceRecognitionDto } from './dto/set-face-recognition.dto';
+import { CreateCommandDto } from './dto/create-command.dto';
 import { DeviceCreatedResponseDto, DeviceResponseDto, DeviceStatusResponseDto } from './dto/device-response.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { JwtPayload } from '../auth/jwt.strategy';
@@ -145,5 +146,28 @@ export class DevicesController {
   ): Promise<void> {
     const user = (req as Request & { user: JwtPayload }).user;
     await this.devicesService.setFaceRecognitionStatus(id, user.sub, dto.enabled, res);
+  }
+
+  @Post(':id/commands')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Queue a manual command (pan/tilt, light, or buzzer) for the device, proxied to its Edge API',
+    description:
+      "Delivered on the device's next /frames poll (~2s), expires if not delivered in time, and temporarily suppresses the matching automatic action on the same actuator.",
+  })
+  @ApiResponse({ status: 201, description: 'Command queued' })
+  @ApiResponse({ status: 400, description: 'Validation failed, or edgeUrl not configured for this device' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({ status: 404, description: 'Device not found or not owned by the authenticated user' })
+  @ApiResponse({ status: 502, description: 'Could not reach the device Edge API, or it rejected the admin credential' })
+  async createCommand(
+    @Param('id') id: string,
+    @Body() dto: CreateCommandDto,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<void> {
+    const user = (req as Request & { user: JwtPayload }).user;
+    await this.devicesService.createCommand(id, user.sub, dto, res);
   }
 }

@@ -144,6 +144,31 @@ export class DevicesService {
     );
   }
 
+  async createCommand(
+    id: string,
+    ownerId: string,
+    dto: { actuator: string; action: Record<string, unknown> },
+    res: Response,
+  ): Promise<void> {
+    const device = await this.findOneForOwner(id, ownerId);
+
+    if (!device.edgeUrl) {
+      res.status(400).json({ error: 'edgeUrl not configured for this device' });
+      return;
+    }
+
+    await this.callDeviceEdgeApi(
+      device,
+      '/commands',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ device_id: id, actuator: dto.actuator, action: dto.action }),
+      },
+      res,
+    );
+  }
+
   private async callDeviceEdgeApi(device: Device, path: string, init: RequestInit, res: Response): Promise<void> {
     let edgeResponse: globalThis.Response;
     try {
