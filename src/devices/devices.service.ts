@@ -169,6 +169,21 @@ export class DevicesService {
     );
   }
 
+  async getLatestFrame(id: string, ownerId: string, res: Response): Promise<void> {
+    const device = await this.findOneForOwner(id, ownerId);
+
+    if (!device.edgeUrl) {
+      res.status(400).json({ error: 'edgeUrl not configured for this device' });
+      return;
+    }
+
+    // FEED-03: no Cloud-side storage of any kind — this always proxies live
+    // to the Edge API's own single-frame cache (app/frame_cache.py) and
+    // never persists or retains the response here, so Cloud cannot
+    // accumulate frame history even by omission.
+    await this.callDeviceEdgeApi(device, `/frames/latest/${id}`, { method: 'GET' }, res);
+  }
+
   private async callDeviceEdgeApi(device: Device, path: string, init: RequestInit, res: Response): Promise<void> {
     let edgeResponse: globalThis.Response;
     try {

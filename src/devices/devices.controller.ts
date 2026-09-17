@@ -170,4 +170,26 @@ export class DevicesController {
     const user = (req as Request & { user: JwtPayload }).user;
     await this.devicesService.createCommand(id, user.sub, dto, res);
   }
+
+  @Get(':id/frame')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: "Get the device's last captured camera frame, proxied live from its Edge API",
+    description:
+      'Never cached or stored on Cloud — every call proxies live to the Edge API. FEED-03: neither Edge nor Cloud retain any frame history, only the single latest one.',
+  })
+  @ApiResponse({ status: 200, description: 'Latest frame (base64 JPEG) with its real capture timestamp' })
+  @ApiResponse({ status: 400, description: 'edgeUrl not configured for this device' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({ status: 404, description: 'Device not found/not owned, or the device has not captured a frame yet' })
+  @ApiResponse({ status: 502, description: 'Could not reach the device Edge API, or it rejected the admin credential' })
+  async getLatestFrame(
+    @Param('id') id: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<void> {
+    const user = (req as Request & { user: JwtPayload }).user;
+    await this.devicesService.getLatestFrame(id, user.sub, res);
+  }
 }
