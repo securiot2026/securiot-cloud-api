@@ -31,12 +31,19 @@ export class AlertsService {
     return qb.orderBy('alert.createdAt', 'DESC').getMany();
   }
 
+  // RULE-12: the old hardcoded door_contact_open check has been retired —
+  // the Edge rules engine (Phase 8) now decides when a door lock fires, and
+  // relays a generic "rule_alert" Reading carrying which rule triggered and
+  // its severity/message. This method's only job is to turn that one
+  // generic Reading shape into an Alert row; it no longer contains
+  // rule-specific logic of its own (no duplicated engine on this side).
   async evaluateRule(reading: Reading): Promise<void> {
-    const isDoorOpen =
-      reading.sensorType === 'door_contact' &&
-      (reading.value === 'open' || (reading.value as { state?: unknown })?.state === 'open');
+    if (reading.sensorType !== 'rule_alert') {
+      return;
+    }
 
-    if (!isDoorOpen) {
+    const payload = this.parseRuleAlertValue(reading.value);
+    if (!payload) {
       return;
     }
 
@@ -48,12 +55,40 @@ export class AlertsService {
         zoneId: reading.zoneId,
         deviceId: reading.deviceId,
         readingId: reading.id,
-        ruleType: 'door_contact_open',
-        severity: 'medium',
+        ruleType: payload.ruleName,
+        severity: payload.severity,
         status: 'active',
-        message: 'Door contact sensor reported open',
+        message: payload.message,
       })
       .orIgnore()
       .execute();
+  }
+
+  private parseRuleAlertValue(
+    value: unknown,
+  ): { ruleName: string; severity: string; message: string } | null {
+    let parsed: unknown = value;
+    if (typeof value === 'string') {
+      try {
+        parsed = JSON.parse(value);
+      } catch {
+        return null;
+      }
+    }
+
+    if (!parsed || typeof parsed !== 'object') {
+      return null;
+    }
+
+    const record = parsed as Record<string, unknown>;
+    if (typeof record.rule_name !== 'string' || typeof record.severity !== 'string') {
+      return null;
+    }
+
+    return {
+      ruleName: record.rule_name,
+      severity: record.severity,
+      message: typeof record.message === 'string' ? record.message : `Rule '${record.rule_name}' triggered`,
+    };
   }
 }

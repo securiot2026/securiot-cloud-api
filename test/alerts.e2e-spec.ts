@@ -68,8 +68,12 @@ describe('Alerts (e2e)', () => {
       .set('X-Device-Key', deviceA.apiKey)
       .send({
         reading_id: 'alerts-e2e-reading-1',
-        sensor_type: 'door_contact',
-        value: { state: 'open' },
+        sensor_type: 'rule_alert',
+        value: JSON.stringify({
+          rule_name: 'Legacy door lock — person (migrated)',
+          severity: 'medium',
+          message: "Rule 'Legacy door lock — person (migrated)' triggered",
+        }),
         recorded_at: new Date().toISOString(),
       });
     expect(ingestRes.status).toBe(201);

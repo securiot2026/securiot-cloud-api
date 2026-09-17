@@ -161,7 +161,33 @@ describe('Telemetry (e2e)', () => {
     expect(response.status).toBe(401);
   });
 
-  it('creates a medium-severity alert when a door_contact reading reports open', async () => {
+  it('creates an alert from a generic rule_alert reading (RULE-12: Edge rules engine, not a Cloud-side hardcoded check)', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/api/v1/telemetry')
+      .set('X-Device-Key', 'valid-api-key')
+      .send({
+        reading_id: 'reading-rule-alert',
+        sensor_type: 'rule_alert',
+        value: JSON.stringify({
+          rule_name: 'Legacy door lock — person (migrated)',
+          severity: 'medium',
+          message: "Rule 'Legacy door lock — person (migrated)' triggered",
+        }),
+        recorded_at: new Date().toISOString(),
+      });
+
+    expect(response.status).toBe(201);
+
+    const alert = await alertRepo.findOne({ where: { readingId: response.body.id } });
+    expect(alert).not.toBeNull();
+    expect(alert?.severity).toBe('medium');
+    expect(alert?.status).toBe('active');
+    expect(alert?.ruleType).toBe('Legacy door lock — person (migrated)');
+    expect(alert?.zoneId).toBe(zoneA.id);
+    expect(alert?.deviceId).toBe(device.id);
+  });
+
+  it('does not create an alert for a plain door_contact reading (the hardcoded check was retired — only rule_alert readings create alerts now)', async () => {
     const response = await request(app.getHttpServer())
       .post('/api/v1/telemetry')
       .set('X-Device-Key', 'valid-api-key')
@@ -175,31 +201,10 @@ describe('Telemetry (e2e)', () => {
     expect(response.status).toBe(201);
 
     const alert = await alertRepo.findOne({ where: { readingId: response.body.id } });
-    expect(alert).not.toBeNull();
-    expect(alert?.severity).toBe('medium');
-    expect(alert?.status).toBe('active');
-    expect(alert?.zoneId).toBe(zoneA.id);
-    expect(alert?.deviceId).toBe(device.id);
-  });
-
-  it('does not create an alert when a door_contact reading reports closed', async () => {
-    const response = await request(app.getHttpServer())
-      .post('/api/v1/telemetry')
-      .set('X-Device-Key', 'valid-api-key')
-      .send({
-        reading_id: 'reading-door-closed',
-        sensor_type: 'door_contact',
-        value: { state: 'closed' },
-        recorded_at: new Date().toISOString(),
-      });
-
-    expect(response.status).toBe(201);
-
-    const alert = await alertRepo.findOne({ where: { readingId: response.body.id } });
     expect(alert).toBeNull();
   });
 
-  it('does not create an alert for non door_contact sensor readings', async () => {
+  it('does not create an alert for non rule_alert sensor readings', async () => {
     const response = await request(app.getHttpServer())
       .post('/api/v1/telemetry')
       .set('X-Device-Key', 'valid-api-key')
@@ -216,11 +221,28 @@ describe('Telemetry (e2e)', () => {
     expect(alert).toBeNull();
   });
 
-  it('does not create a second alert when the same door_contact/open reading is resent', async () => {
+  it('does not create an alert for a rule_alert reading with a malformed payload', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/api/v1/telemetry')
+      .set('X-Device-Key', 'valid-api-key')
+      .send({
+        reading_id: 'reading-rule-alert-bad',
+        sensor_type: 'rule_alert',
+        value: 'not valid json',
+        recorded_at: new Date().toISOString(),
+      });
+
+    expect(response.status).toBe(201);
+
+    const alert = await alertRepo.findOne({ where: { readingId: response.body.id } });
+    expect(alert).toBeNull();
+  });
+
+  it('does not create a second alert when the same rule_alert reading is resent', async () => {
     const payload = {
-      reading_id: 'reading-door-open-dup',
-      sensor_type: 'door_contact',
-      value: { state: 'open' },
+      reading_id: 'reading-rule-alert-dup',
+      sensor_type: 'rule_alert',
+      value: JSON.stringify({ rule_name: 'Weapon alert', severity: 'critical', message: 'Weapon detected' }),
       recorded_at: new Date().toISOString(),
     };
 
