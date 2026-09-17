@@ -110,12 +110,46 @@ export class DevicesService {
       );
     }
 
+    await this.callDeviceEdgeApi(device, '/faces', { method: 'POST', body: formData }, res);
+  }
+
+  async getFaceRecognitionStatus(id: string, ownerId: string, res: Response): Promise<void> {
+    const device = await this.findOneForOwner(id, ownerId);
+
+    if (!device.edgeUrl) {
+      res.status(400).json({ error: 'edgeUrl not configured for this device' });
+      return;
+    }
+
+    await this.callDeviceEdgeApi(device, `/devices/${id}/face-recognition`, { method: 'GET' }, res);
+  }
+
+  async setFaceRecognitionStatus(id: string, ownerId: string, enabled: boolean, res: Response): Promise<void> {
+    const device = await this.findOneForOwner(id, ownerId);
+
+    if (!device.edgeUrl) {
+      res.status(400).json({ error: 'edgeUrl not configured for this device' });
+      return;
+    }
+
+    await this.callDeviceEdgeApi(
+      device,
+      `/devices/${id}/face-recognition`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled }),
+      },
+      res,
+    );
+  }
+
+  private async callDeviceEdgeApi(device: Device, path: string, init: RequestInit, res: Response): Promise<void> {
     let edgeResponse: globalThis.Response;
     try {
-      edgeResponse = await fetch(`${device.edgeUrl}/faces`, {
-        method: 'POST',
-        headers: { 'X-Admin-Key': process.env.EDGE_ADMIN_API_KEY || '' },
-        body: formData,
+      edgeResponse = await fetch(`${device.edgeUrl}${path}`, {
+        ...init,
+        headers: { ...(init.headers || {}), 'X-Admin-Key': process.env.EDGE_ADMIN_API_KEY || '' },
       });
     } catch {
       throw new BadGatewayException('Could not reach the device Edge API');

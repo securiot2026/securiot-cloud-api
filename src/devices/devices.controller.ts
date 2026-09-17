@@ -20,6 +20,7 @@ import { Request, Response } from 'express';
 import { DevicesService } from './devices.service';
 import { CreateDeviceDto } from './dto/create-device.dto';
 import { UpdateDeviceDto } from './dto/update-device.dto';
+import { SetFaceRecognitionDto } from './dto/set-face-recognition.dto';
 import { DeviceCreatedResponseDto, DeviceResponseDto, DeviceStatusResponseDto } from './dto/device-response.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { JwtPayload } from '../auth/jwt.strategy';
@@ -107,5 +108,42 @@ export class DevicesController {
   ): Promise<void> {
     const user = (req as Request & { user: JwtPayload }).user;
     await this.devicesService.enrollFace(id, user.sub, name, images ?? [], res);
+  }
+
+  @Get(':id/face-recognition')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Get a device's current face-recognition on/off state, proxied from its Edge API" })
+  @ApiResponse({ status: 200, description: 'Current face-recognition state' })
+  @ApiResponse({ status: 400, description: 'edgeUrl not configured for this device' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({ status: 404, description: 'Device not found or not owned by the authenticated user' })
+  @ApiResponse({ status: 502, description: 'Could not reach the device Edge API, or it rejected the admin credential' })
+  async getFaceRecognitionStatus(
+    @Param('id') id: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<void> {
+    const user = (req as Request & { user: JwtPayload }).user;
+    await this.devicesService.getFaceRecognitionStatus(id, user.sub, res);
+  }
+
+  @Patch(':id/face-recognition')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Turn a device's face recognition on or off, proxied to its Edge API" })
+  @ApiResponse({ status: 200, description: 'Face-recognition state updated' })
+  @ApiResponse({ status: 400, description: 'Validation failed, or edgeUrl not configured for this device' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({ status: 404, description: 'Device not found or not owned by the authenticated user' })
+  @ApiResponse({ status: 502, description: 'Could not reach the device Edge API, or it rejected the admin credential' })
+  async setFaceRecognitionStatus(
+    @Param('id') id: string,
+    @Body() dto: SetFaceRecognitionDto,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<void> {
+    const user = (req as Request & { user: JwtPayload }).user;
+    await this.devicesService.setFaceRecognitionStatus(id, user.sub, dto.enabled, res);
   }
 }
