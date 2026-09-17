@@ -184,6 +184,85 @@ export class DevicesService {
     await this.callDeviceEdgeApi(device, `/frames/latest/${id}`, { method: 'GET' }, res);
   }
 
+  async listRules(id: string, ownerId: string, res: Response): Promise<void> {
+    const device = await this.findOneForOwner(id, ownerId);
+
+    if (!device.edgeUrl) {
+      res.status(400).json({ error: 'edgeUrl not configured for this device' });
+      return;
+    }
+
+    await this.callDeviceEdgeApi(device, `/rules?device_id=${encodeURIComponent(id)}`, { method: 'GET' }, res);
+  }
+
+  async createRule(id: string, ownerId: string, dto: Record<string, unknown>, res: Response): Promise<void> {
+    const device = await this.findOneForOwner(id, ownerId);
+
+    if (!device.edgeUrl) {
+      res.status(400).json({ error: 'edgeUrl not configured for this device' });
+      return;
+    }
+
+    await this.callDeviceEdgeApi(
+      device,
+      '/rules',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...dto, device_id: id }),
+      },
+      res,
+    );
+  }
+
+  async updateRule(
+    id: string,
+    ruleId: string,
+    ownerId: string,
+    dto: Record<string, unknown>,
+    res: Response,
+  ): Promise<void> {
+    const device = await this.findOneForOwner(id, ownerId);
+
+    if (!device.edgeUrl) {
+      res.status(400).json({ error: 'edgeUrl not configured for this device' });
+      return;
+    }
+
+    await this.callDeviceEdgeApi(
+      device,
+      `/rules/${encodeURIComponent(ruleId)}`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(dto),
+      },
+      res,
+    );
+  }
+
+  async deleteRule(id: string, ruleId: string, ownerId: string, res: Response): Promise<void> {
+    const device = await this.findOneForOwner(id, ownerId);
+
+    if (!device.edgeUrl) {
+      res.status(400).json({ error: 'edgeUrl not configured for this device' });
+      return;
+    }
+
+    await this.callDeviceEdgeApi(device, `/rules/${encodeURIComponent(ruleId)}`, { method: 'DELETE' }, res);
+  }
+
+  async dryRunRule(id: string, ruleId: string, ownerId: string, res: Response): Promise<void> {
+    const device = await this.findOneForOwner(id, ownerId);
+
+    if (!device.edgeUrl) {
+      res.status(400).json({ error: 'edgeUrl not configured for this device' });
+      return;
+    }
+
+    await this.callDeviceEdgeApi(device, `/rules/${encodeURIComponent(ruleId)}/dry-run`, { method: 'POST' }, res);
+  }
+
   private async callDeviceEdgeApi(device: Device, path: string, init: RequestInit, res: Response): Promise<void> {
     let edgeResponse: globalThis.Response;
     try {

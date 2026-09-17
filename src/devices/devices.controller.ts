@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -22,6 +23,8 @@ import { CreateDeviceDto } from './dto/create-device.dto';
 import { UpdateDeviceDto } from './dto/update-device.dto';
 import { SetFaceRecognitionDto } from './dto/set-face-recognition.dto';
 import { CreateCommandDto } from './dto/create-command.dto';
+import { CreateRuleDto } from './dto/create-rule.dto';
+import { UpdateRuleDto } from './dto/update-rule.dto';
 import { DeviceCreatedResponseDto, DeviceResponseDto, DeviceStatusResponseDto } from './dto/device-response.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { JwtPayload } from '../auth/jwt.strategy';
@@ -191,5 +194,96 @@ export class DevicesController {
   ): Promise<void> {
     const user = (req as Request & { user: JwtPayload }).user;
     await this.devicesService.getLatestFrame(id, user.sub, res);
+  }
+
+  @Get(':id/rules')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "List a device's rules, proxied from its Edge API" })
+  @ApiResponse({ status: 200, description: 'List of rules' })
+  @ApiResponse({ status: 400, description: 'edgeUrl not configured for this device' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({ status: 404, description: 'Device not found or not owned by the authenticated user' })
+  @ApiResponse({ status: 502, description: 'Could not reach the device Edge API, or it rejected the admin credential' })
+  async listRules(@Param('id') id: string, @Req() req: Request, @Res() res: Response): Promise<void> {
+    const user = (req as Request & { user: JwtPayload }).user;
+    await this.devicesService.listRules(id, user.sub, res);
+  }
+
+  @Post(':id/rules')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Create a rule for a device, proxied to its Edge API' })
+  @ApiResponse({ status: 201, description: 'Rule created' })
+  @ApiResponse({ status: 400, description: 'Validation failed, or edgeUrl not configured for this device' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({ status: 404, description: 'Device not found or not owned by the authenticated user' })
+  @ApiResponse({ status: 502, description: 'Could not reach the device Edge API, or it rejected the admin credential' })
+  async createRule(
+    @Param('id') id: string,
+    @Body() dto: CreateRuleDto,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<void> {
+    const user = (req as Request & { user: JwtPayload }).user;
+    await this.devicesService.createRule(id, user.sub, dto as unknown as Record<string, unknown>, res);
+  }
+
+  @Patch(':id/rules/:ruleId')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update a rule (including enable/disable), proxied to its Edge API' })
+  @ApiResponse({ status: 200, description: 'Rule updated' })
+  @ApiResponse({ status: 400, description: 'Validation failed, or edgeUrl not configured for this device' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({ status: 404, description: 'Device or rule not found' })
+  @ApiResponse({ status: 502, description: 'Could not reach the device Edge API, or it rejected the admin credential' })
+  async updateRule(
+    @Param('id') id: string,
+    @Param('ruleId') ruleId: string,
+    @Body() dto: UpdateRuleDto,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<void> {
+    const user = (req as Request & { user: JwtPayload }).user;
+    await this.devicesService.updateRule(id, ruleId, user.sub, dto as unknown as Record<string, unknown>, res);
+  }
+
+  @Post(':id/rules/:ruleId/dry-run')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Manually fire a rule's configured action to test it (RULE-11), proxied to its Edge API" })
+  @ApiResponse({ status: 200, description: 'Rule action executed' })
+  @ApiResponse({ status: 400, description: 'Rule disabled, or edgeUrl not configured for this device' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({ status: 404, description: 'Device or rule not found' })
+  @ApiResponse({ status: 502, description: 'Could not reach the device Edge API, or it rejected the admin credential' })
+  async dryRunRule(
+    @Param('id') id: string,
+    @Param('ruleId') ruleId: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<void> {
+    const user = (req as Request & { user: JwtPayload }).user;
+    await this.devicesService.dryRunRule(id, ruleId, user.sub, res);
+  }
+
+  @Delete(':id/rules/:ruleId')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Delete a rule, proxied to its Edge API' })
+  @ApiResponse({ status: 204, description: 'Rule deleted' })
+  @ApiResponse({ status: 400, description: 'edgeUrl not configured for this device' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({ status: 404, description: 'Device or rule not found' })
+  @ApiResponse({ status: 502, description: 'Could not reach the device Edge API, or it rejected the admin credential' })
+  async deleteRule(
+    @Param('id') id: string,
+    @Param('ruleId') ruleId: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<void> {
+    const user = (req as Request & { user: JwtPayload }).user;
+    await this.devicesService.deleteRule(id, ruleId, user.sub, res);
   }
 }
