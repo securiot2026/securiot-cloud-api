@@ -4,12 +4,14 @@ import { Repository } from 'typeorm';
 import { Alert } from './alert.entity';
 import { Reading } from '../telemetry/entities/reading.entity';
 import { QueryAlertsDto } from './dto/query-alerts.dto';
+import { AlertNotificationService } from './alert-notification.service';
 
 @Injectable()
 export class AlertsService {
   constructor(
     @InjectRepository(Alert)
     private readonly alertsRepository: Repository<Alert>,
+    private readonly alertNotificationService: AlertNotificationService,
   ) {}
 
   findAllForOwner(ownerId: string, query: QueryAlertsDto): Promise<Alert[]> {
@@ -47,6 +49,15 @@ export class AlertsService {
       return;
     }
 
+    // A replayed reading already has its Alert: skip the insert and, above all, the email.
+    const existing = await this.alertsRepository.findOne({
+      where: { readingId: reading.id },
+      select: { id: true },
+    });
+    if (existing) {
+      return;
+    }
+
     await this.alertsRepository
       .createQueryBuilder()
       .insert()
@@ -62,6 +73,15 @@ export class AlertsService {
       })
       .orIgnore()
       .execute();
+
+    // Not awaited: notifyNewAlert returns void and never throws.
+    this.alertNotificationService.notifyNewAlert({
+      zoneId: reading.zoneId,
+      deviceId: reading.deviceId,
+      ruleType: payload.ruleName,
+      severity: payload.severity,
+      message: payload.message,
+    });
   }
 
   private parseRuleAlertValue(
