@@ -25,6 +25,7 @@ import { SetFaceRecognitionDto } from './dto/set-face-recognition.dto';
 import { CreateCommandDto } from './dto/create-command.dto';
 import { CreateRuleDto } from './dto/create-rule.dto';
 import { UpdateRuleDto } from './dto/update-rule.dto';
+import { DryRunRuleDto } from './dto/dry-run-rule.dto';
 import { DeviceCreatedResponseDto, DeviceResponseDto, DeviceStatusResponseDto } from './dto/device-response.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { JwtPayload } from '../auth/jwt.strategy';
@@ -297,18 +298,19 @@ export class DevicesController {
   @ApiBearerAuth()
   @ApiOperation({ summary: "Manually fire a rule's configured action to test it (RULE-11), proxied to its Edge API" })
   @ApiResponse({ status: 200, description: 'Rule action executed' })
-  @ApiResponse({ status: 400, description: 'Rule disabled, or edgeUrl not configured for this device' })
+  @ApiResponse({ status: 400, description: 'Rule disabled, edgeUrl not configured for this device, or a non-boolean execute value' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   @ApiResponse({ status: 404, description: 'Device or rule not found' })
   @ApiResponse({ status: 502, description: 'Could not reach the device Edge API, or it rejected the admin credential' })
   async dryRunRule(
     @Param('id') id: string,
     @Param('ruleId') ruleId: string,
+    @Body() dto: DryRunRuleDto,
     @Req() req: Request,
     @Res() res: Response,
   ): Promise<void> {
     const user = (req as Request & { user: JwtPayload }).user;
-    await this.devicesService.dryRunRule(id, ruleId, user.sub, res);
+    await this.devicesService.dryRunRule(id, ruleId, user.sub, dto, res);
   }
 
   @Delete(':id/rules/:ruleId')

@@ -77,6 +77,14 @@ describe('Devices — rules proxy (e2e)', () => {
     );
   }
 
+  function readBody(req: http.IncomingMessage): Promise<string> {
+    return new Promise((resolve) => {
+      let raw = '';
+      req.on('data', (chunk) => (raw += chunk));
+      req.on('end', () => resolve(raw));
+    });
+  }
+
   function startFakeEdge(
     handler: (req: http.IncomingMessage, res: http.ServerResponse) => void,
   ): Promise<{ server: http.Server; url: string }> {
@@ -225,14 +233,20 @@ describe('Devices — rules proxy (e2e)', () => {
     }
   });
 
-  it('dry-runs a rule via POST /rules/:ruleId/dry-run', async () => {
+  it('dry-runs a rule via POST /rules/:ruleId/dry-run and forwards the Device identity', async () => {
     let receivedPath: string | undefined;
     let receivedMethod: string | undefined;
+    let receivedBody: Record<string, unknown> | undefined;
+    let receivedContentType: string | undefined;
     const { server, url } = await startFakeEdge((req, res) => {
       receivedPath = req.url;
       receivedMethod = req.method;
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ rule: { id: 7 }, result: { door_action: 'lock', rule_command: null } }));
+      receivedContentType = req.headers['content-type'];
+      readBody(req).then((raw) => {
+        receivedBody = JSON.parse(raw);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ rule: { id: 7 }, result: { door_action: 'lock', rule_command: null } }));
+      });
     });
 
     try {
@@ -240,15 +254,109 @@ describe('Devices — rules proxy (e2e)', () => {
 
       const res = await request(app.getHttpServer())
         .post(`/api/v1/devices/${device.id}/rules/7/dry-run`)
-        .set('Authorization', `Bearer ${jwtA}`);
+        .set('Authorization', `Bearer ${jwtA}`)
+        .send({});
 
       expect(res.status).toBe(200);
       expect(res.body.result.door_action).toBe('lock');
       expect(receivedMethod).toBe('POST');
       expect(receivedPath).toBe('/rules/7/dry-run');
+      expect(receivedContentType).toContain('application/json');
+      expect(receivedBody).toEqual({ device_id: device.id, zone_id: zoneA.id, execute: false });
     } finally {
       server.close();
     }
+  });
+
+  it('forwards execute true when the client explicitly asks for it', async () => {
+    let receivedBody: Record<string, unknown> | undefined;
+    const { server, url } = await startFakeEdge((req, res) => {
+      readBody(req).then((raw) => {
+        receivedBody = JSON.parse(raw);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ rule: { id: 7 }, result: {}, executed: true, queued: ['buzzer'] }));
+      });
+    });
+
+    try {
+      const device = await createDeviceDirect(url);
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/v1/devices/${device.id}/rules/7/dry-run`)
+        .set('Authorization', `Bearer ${jwtA}`)
+        .send({ execute: true });
+
+      expect(res.status).toBe(200);
+      expect(res.body.queued).toEqual(['buzzer']);
+      expect(receivedBody).toEqual({ device_id: device.id, zone_id: zoneA.id, execute: true });
+    } finally {
+      server.close();
+    }
+  });
+
+  it('ignores client-supplied device_id and zone_id on dry-run', async () => {
+    let receivedBody: Record<string, unknown> | undefined;
+    const { server, url } = await startFakeEdge((req, res) => {
+      readBody(req).then((raw) => {
+        receivedBody = JSON.parse(raw);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ rule: { id: 7 }, result: {} }));
+      });
+    });
+
+    try {
+      const device = await createDeviceDirect(url);
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/v1/devices/${device.id}/rules/7/dry-run`)
+        .set('Authorization', `Bearer ${jwtA}`)
+        .send({ device_id: 'attacker-device', zone_id: 'attacker-zone', execute: false });
+
+      expect(res.status).toBe(200);
+      expect(receivedBody).toEqual({ device_id: device.id, zone_id: zoneA.id, execute: false });
+    } finally {
+      server.close();
+    }
+  });
+
+  it('rejects a non-boolean execute with 400 and never contacts Edge', async () => {
+    let edgeCalled = false;
+    const { server, url } = await startFakeEdge((_req, res) => {
+      edgeCalled = true;
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end('{}');
+    });
+
+    try {
+      const device = await createDeviceDirect(url);
+
+      for (const execute of ['true', 1, 'yes']) {
+        const res = await request(app.getHttpServer())
+          .post(`/api/v1/devices/${device.id}/rules/7/dry-run`)
+          .set('Authorization', `Bearer ${jwtA}`)
+          .send({ execute });
+        expect(res.status).toBe(400);
+      }
+      expect(edgeCalled).toBe(false);
+    } finally {
+      server.close();
+    }
+  });
+
+  it('dry-run returns 404 for a device owned by another operator and 400 without edgeUrl', async () => {
+    const device = await createDeviceDirect(null);
+
+    const other = await request(app.getHttpServer())
+      .post(`/api/v1/devices/${device.id}/rules/7/dry-run`)
+      .set('Authorization', `Bearer ${jwtB}`)
+      .send({});
+    expect(other.status).toBe(404);
+
+    const noEdge = await request(app.getHttpServer())
+      .post(`/api/v1/devices/${device.id}/rules/7/dry-run`)
+      .set('Authorization', `Bearer ${jwtA}`)
+      .send({});
+    expect(noEdge.status).toBe(400);
   });
 
   it('remaps a raw Edge 401 to Cloud 502 on dry-run', async () => {

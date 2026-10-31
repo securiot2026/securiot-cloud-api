@@ -8,6 +8,7 @@ import { Zone } from '../zones/zone.entity';
 import { Reading } from '../telemetry/entities/reading.entity';
 import { CreateDeviceDto } from './dto/create-device.dto';
 import { UpdateDeviceDto } from './dto/update-device.dto';
+import { DryRunRuleDto } from './dto/dry-run-rule.dto';
 import { DeviceCreatedResponseDto, DeviceResponseDto, DeviceStatusResponseDto } from './dto/device-response.dto';
 
 const DEFAULT_ONLINE_WINDOW_SECONDS = 300;
@@ -284,7 +285,7 @@ export class DevicesService {
     await this.callDeviceEdgeApi(device, `/rules/${encodeURIComponent(ruleId)}`, { method: 'DELETE' }, res);
   }
 
-  async dryRunRule(id: string, ruleId: string, ownerId: string, res: Response): Promise<void> {
+  async dryRunRule(id: string, ruleId: string, ownerId: string, dto: DryRunRuleDto, res: Response): Promise<void> {
     const device = await this.findOneForOwner(id, ownerId);
 
     if (!device.edgeUrl) {
@@ -292,7 +293,21 @@ export class DevicesService {
       return;
     }
 
-    await this.callDeviceEdgeApi(device, `/rules/${encodeURIComponent(ruleId)}/dry-run`, { method: 'POST' }, res);
+    // Identity always comes from our own Device row, never from client input (T-12-02-02).
+    await this.callDeviceEdgeApi(
+      device,
+      `/rules/${encodeURIComponent(ruleId)}/dry-run`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          device_id: device.id,
+          zone_id: device.zoneId,
+          execute: dto?.execute === true,
+        }),
+      },
+      res,
+    );
   }
 
   private async callDeviceEdgeApi(device: Device, path: string, init: RequestInit, res: Response): Promise<void> {
