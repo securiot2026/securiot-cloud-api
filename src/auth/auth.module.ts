@@ -9,6 +9,7 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { JwtStrategy } from './jwt.strategy';
+import { PasswordResetRateLimiter } from './password-reset-rate-limiter';
 import { PasswordResetToken } from './password-reset-token.entity';
 import { PasswordResetService } from './password-reset.service';
 
@@ -31,7 +32,7 @@ import { PasswordResetService } from './password-reset.service';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, JwtAuthGuard, PasswordResetService],
+  providers: [AuthService, JwtStrategy, JwtAuthGuard, PasswordResetService, PasswordResetRateLimiter],
   exports: [AuthService, JwtAuthGuard],
 })
 export class AuthModule {}
