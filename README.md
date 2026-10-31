@@ -70,6 +70,8 @@ RESEND_FROM=onboarding@resend.dev
 # Mailbox that receives every password reset link, because the seeded login
 # test@securiot.local is not a real mailbox. It must equal the Resend account email while
 # the sandbox sender is used. When unset the reset email is disabled.
+# The same address also receives a short email whenever the alerts engine creates a new alert
+# (throttled to one per device and alert type per 10 minutes). Nothing is sent when unset.
 ADMIN_EMAIL=juancarlosanguloabud@gmail.com
 # Base URL of the Web App used to build the reset link. http or https only, no credentials.
 WEB_APP_URL=http://localhost:4200
@@ -120,6 +122,21 @@ The seeded login `test@securiot.local` has no real mailbox, so every reset link 
 - With `RESEND_API_KEY` unset (dev mode) nothing is sent and only the subject is logged at WARN. To see the reset link in the log, also set `MAIL_DEV_LOG=1`. This does not depend on `NODE_ENV`, and the link is never logged otherwise.
 - Rate limits are in memory and per process: `forgot-password` allows 5 requests per 15 minutes per IP and per email, `reset-password` 10 per 15 minutes per IP. Excess requests get `429` with `Retry-After`. The counters are lost on restart, and behind a reverse proxy every client shares the proxy address because Express `trust proxy` is not enabled.
 - Old JWTs are not revoked: there is no revocation list, so a token issued before a reset stays valid until `JWT_EXPIRES_IN` elapses (1h by default).
+
+## Admin email notifications
+
+When the alerts engine creates a new alert, the Cloud sends a short plain-text email in Spanish to `ADMIN_EMAIL`. It covers two events:
+
+- A `rule_alert` reading that becomes an alert (the Edge rules engine fired a rule).
+- A device going offline (the cron sweep creates the `device_offline` alert).
+
+The email carries only the alert type, severity, message, device id, zone id and a link to the Web alerts page (`WEB_APP_URL/alerts`). It never includes any key or secret.
+
+- Throttle: at most one email per device and alert type every 10 minutes. The throttle is in memory and per process, so it resets on restart. A replayed reading (same `reading_id`) creates no second alert and no email.
+- Sending is asynchronous. A Resend failure, a timeout or a hang never affects telemetry ingest or the offline cron.
+- With `RESEND_API_KEY` unset (dev mode) the email is not sent and only the subject is logged at WARN (the body too when `MAIL_DEV_LOG=1`).
+- With `ADMIN_EMAIL` unset or blank nothing is sent. The alert is still created as usual.
+- While the sandbox sender `onboarding@resend.dev` is used, `ADMIN_EMAIL` must be the Resend account address.
 
 ## Testing
 

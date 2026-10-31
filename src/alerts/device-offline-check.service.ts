@@ -3,6 +3,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Alert } from './alert.entity';
+import { AlertNotificationService } from './alert-notification.service';
 import { Device } from '../devices/device.entity';
 import { Reading } from '../telemetry/entities/reading.entity';
 import { isWithinOnlineWindow, resolveLastSeen } from '../devices/device-presence';
@@ -30,6 +31,7 @@ export class DeviceOfflineCheckService {
     private readonly readingsRepository: Repository<Reading>,
     @InjectRepository(Alert)
     private readonly alertsRepository: Repository<Alert>,
+    private readonly alertNotificationService: AlertNotificationService,
   ) {}
 
   @Cron(CronExpression.EVERY_MINUTE)
@@ -54,6 +56,7 @@ export class DeviceOfflineCheckService {
       });
 
       if (!isOnline && !activeOfflineAlert) {
+        const message = `Device '${device.name}' has not reported within the last ${windowMs / 1000}s`;
         await this.alertsRepository.save(
           this.alertsRepository.create({
             zoneId: device.zoneId,
@@ -62,15 +65,32 @@ export class DeviceOfflineCheckService {
             ruleType: DEVICE_OFFLINE_RULE_TYPE,
             severity: 'high',
             status: 'active',
-            message: `Device '${device.name}' has not reported within the last ${windowMs / 1000}s`,
+            message,
           }),
         );
         this.logger.warn(`Device ${device.id} (${device.name}) went offline`);
+        this.notifyAdmin(device, message);
       } else if (isOnline && activeOfflineAlert) {
         activeOfflineAlert.status = 'resolved';
         await this.alertsRepository.save(activeOfflineAlert);
         this.logger.log(`Device ${device.id} (${device.name}) is back online`);
       }
+    }
+  }
+
+  // Not awaited and wrapped so the sweep never depends on the notifier behaving.
+  private notifyAdmin(device: Device, message: string): void {
+    try {
+      this.alertNotificationService.notifyNewAlert({
+        deviceId: device.id,
+        zoneId: device.zoneId,
+        ruleType: DEVICE_OFFLINE_RULE_TYPE,
+        severity: 'high',
+        message,
+      });
+    } catch (error) {
+      const name = error instanceof Error ? error.name : 'Error';
+      this.logger.warn(`Offline alert email failed (${name})`);
     }
   }
 }

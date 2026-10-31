@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DeviceOfflineCheckService, DEVICE_OFFLINE_RULE_TYPE } from './device-offline-check.service';
 import { Alert } from './alert.entity';
+import { AlertNotificationService } from './alert-notification.service';
 import { Device } from '../devices/device.entity';
 import { Reading } from '../telemetry/entities/reading.entity';
 
@@ -10,6 +11,7 @@ describe('DeviceOfflineCheckService', () => {
   let devicesRepo: { find: jest.Mock };
   let readingsRepo: { findOne: jest.Mock };
   let alertsRepo: { findOne: jest.Mock; save: jest.Mock; create: jest.Mock };
+  let notifier: { notifyNewAlert: jest.Mock };
 
   const device = { id: 'device-1', name: 'Front Door', zoneId: 'zone-1', lastSeenAt: null } as Device;
 
@@ -22,12 +24,15 @@ describe('DeviceOfflineCheckService', () => {
       create: jest.fn((x) => x),
     };
 
+    notifier = { notifyNewAlert: jest.fn() };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         DeviceOfflineCheckService,
         { provide: getRepositoryToken(Device), useValue: devicesRepo },
         { provide: getRepositoryToken(Reading), useValue: readingsRepo },
         { provide: getRepositoryToken(Alert), useValue: alertsRepo },
+        { provide: AlertNotificationService, useValue: notifier },
       ],
     }).compile();
 
@@ -45,6 +50,7 @@ describe('DeviceOfflineCheckService', () => {
     await service.checkOfflineDevices();
 
     expect(alertsRepo.save).not.toHaveBeenCalled();
+    expect(notifier.notifyNewAlert).not.toHaveBeenCalled();
   });
 
   it('creates exactly one device_offline alert when lastSeenAt is outside the window and there are no readings', async () => {
@@ -62,6 +68,44 @@ describe('DeviceOfflineCheckService', () => {
     expect(created.deviceId).toBe('device-1');
   });
 
+  it('notifies the admin exactly once with the stored alert details when the sweep creates the alert', async () => {
+    process.env.DEVICE_ONLINE_WINDOW_SECONDS = '60';
+    devicesRepo.find.mockResolvedValue([{ ...device, lastSeenAt: new Date(Date.now() - 120_000) }]);
+    readingsRepo.findOne.mockResolvedValue(null);
+    alertsRepo.findOne.mockResolvedValue(null);
+
+    await service.checkOfflineDevices();
+
+    const created = alertsRepo.create.mock.calls[0][0];
+    expect(notifier.notifyNewAlert).toHaveBeenCalledTimes(1);
+    expect(notifier.notifyNewAlert).toHaveBeenCalledWith({
+      deviceId: 'device-1',
+      zoneId: 'zone-1',
+      ruleType: DEVICE_OFFLINE_RULE_TYPE,
+      severity: 'high',
+      message: created.message,
+    });
+  });
+
+  it('keeps sweeping when the notifier throws: the alert is saved and the next device is processed', async () => {
+    process.env.DEVICE_ONLINE_WINDOW_SECONDS = '60';
+    const stale = new Date(Date.now() - 120_000);
+    devicesRepo.find.mockResolvedValue([
+      { ...device, id: 'device-1', lastSeenAt: stale },
+      { ...device, id: 'device-2', name: 'Back Door', lastSeenAt: stale },
+    ]);
+    readingsRepo.findOne.mockResolvedValue(null);
+    alertsRepo.findOne.mockResolvedValue(null);
+    notifier.notifyNewAlert.mockImplementation(() => {
+      throw new Error('notifier boom');
+    });
+
+    await expect(service.checkOfflineDevices()).resolves.toBeUndefined();
+
+    expect(alertsRepo.save).toHaveBeenCalledTimes(2);
+    expect(notifier.notifyNewAlert).toHaveBeenCalledTimes(2);
+  });
+
   it('keeps a device with a fresh heartbeat and zero readings online and resolves an active alert', async () => {
     devicesRepo.find.mockResolvedValue([{ ...device, lastSeenAt: new Date() }]);
     readingsRepo.findOne.mockResolvedValue(null);
@@ -72,6 +116,7 @@ describe('DeviceOfflineCheckService', () => {
 
     expect(alertsRepo.create).not.toHaveBeenCalled();
     expect(alertsRepo.save).toHaveBeenCalledWith({ ...existing, status: 'resolved' });
+    expect(notifier.notifyNewAlert).not.toHaveBeenCalled();
   });
 
   it('keeps a device with a fresh reading and null lastSeenAt online (predates heartbeats)', async () => {
@@ -115,6 +160,7 @@ describe('DeviceOfflineCheckService', () => {
     await service.checkOfflineDevices();
 
     expect(alertsRepo.save).not.toHaveBeenCalled();
+    expect(notifier.notifyNewAlert).not.toHaveBeenCalled();
   });
 
   it('leaves a never-reported device with an active alert untouched', async () => {
