@@ -169,6 +169,32 @@ describe('Devices (e2e)', () => {
     expect(res.body.lastReading).not.toBeNull();
   });
 
+  it('reports online with null lastReading for a fresh heartbeat and no readings', async () => {
+    const device = await createDeviceDirect(zoneA.id, 'Fresh Heartbeat Device');
+    await deviceRepo.update({ id: device.id }, { lastSeenAt: new Date(Date.now() - 10 * 1000) });
+
+    const res = await request(app.getHttpServer())
+      .get(`/api/v1/devices/${device.id}`)
+      .set('Authorization', `Bearer ${jwtA}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.isOnline).toBe(true);
+    expect(res.body.lastReading).toBeNull();
+  });
+
+  it('reports offline for a stale heartbeat and no readings', async () => {
+    const device = await createDeviceDirect(zoneA.id, 'Stale Heartbeat Device');
+    await deviceRepo.update({ id: device.id }, { lastSeenAt: new Date(Date.now() - 10 * 60 * 1000) });
+
+    const res = await request(app.getHttpServer())
+      .get(`/api/v1/devices/${device.id}`)
+      .set('Authorization', `Bearer ${jwtA}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.isOnline).toBe(false);
+    expect(res.body.lastReading).toBeNull();
+  });
+
   it('returns 404 for a device detail whose zone belongs to another user', async () => {
     const otherZone = await zoneRepo.findOne({ where: { name: 'Zone B' } });
     const device = await createDeviceDirect(otherZone!.id, 'Other Owner Device');

@@ -5,12 +5,16 @@ import { Repository } from 'typeorm';
 import { Alert } from './alert.entity';
 import { Device } from '../devices/device.entity';
 import { Reading } from '../telemetry/entities/reading.entity';
+import { isWithinOnlineWindow, resolveLastSeen } from '../devices/device-presence';
 
 const DEFAULT_ONLINE_WINDOW_SECONDS = 300;
 export const DEVICE_OFFLINE_RULE_TYPE = 'device_offline';
 
 // EXTR-01: generate an alert when a device transitions online -> offline,
-// and resolve it automatically when a reading arrives again. Deliberately
+// and resolve it automatically when it reports again. Presence comes from the
+// Edge heartbeat (Device.lastSeenAt, driven by /frames requests) as well as from
+// Readings, so an empty scene stays online; a device that has never reported
+// (no heartbeat, no Reading) is skipped entirely (D-06). Deliberately
 // separate from AlertsService.evaluateRule() — that method turns a single
 // incoming Reading into an Alert; this is the one place in the system that
 // generates an alert from the *absence* of a Reading, which needs a
@@ -40,8 +44,10 @@ export class DeviceOfflineCheckService {
         order: { recordedAt: 'DESC' },
       });
 
-      const isOnline =
-        !!lastReading && Date.now() - new Date(lastReading.recordedAt).getTime() <= windowMs;
+      const lastSeen = resolveLastSeen(device.lastSeenAt, lastReading?.recordedAt);
+      if (lastSeen === null) continue;
+
+      const isOnline = isWithinOnlineWindow(lastSeen, windowMs, Date.now());
 
       const activeOfflineAlert = await this.alertsRepository.findOne({
         where: { deviceId: device.id, ruleType: DEVICE_OFFLINE_RULE_TYPE, status: 'active' },

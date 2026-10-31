@@ -10,6 +10,7 @@ import { CreateDeviceDto } from './dto/create-device.dto';
 import { UpdateDeviceDto } from './dto/update-device.dto';
 import { DryRunRuleDto } from './dto/dry-run-rule.dto';
 import { DeviceCreatedResponseDto, DeviceResponseDto, DeviceStatusResponseDto } from './dto/device-response.dto';
+import { isWithinOnlineWindow, resolveLastSeen } from './device-presence';
 
 const DEFAULT_ONLINE_WINDOW_SECONDS = 300;
 
@@ -339,7 +340,8 @@ export class DevicesService {
 
     const windowMs =
       Number(process.env.DEVICE_ONLINE_WINDOW_SECONDS || DEFAULT_ONLINE_WINDOW_SECONDS) * 1000;
-    const isOnline = !!lastReading && Date.now() - new Date(lastReading.recordedAt).getTime() <= windowMs;
+    const lastSeen = resolveLastSeen(device.lastSeenAt, lastReading?.recordedAt);
+    const isOnline = isWithinOnlineWindow(lastSeen, windowMs, Date.now());
 
     return {
       ...this.toResponse(device),
