@@ -1,4 +1,10 @@
-import { BadGatewayException, BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadGatewayException,
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as crypto from 'crypto';
@@ -10,6 +16,7 @@ import { CreateDeviceDto } from './dto/create-device.dto';
 import { UpdateDeviceDto } from './dto/update-device.dto';
 import { DryRunRuleDto } from './dto/dry-run-rule.dto';
 import { DeviceCreatedResponseDto, DeviceResponseDto, DeviceStatusResponseDto } from './dto/device-response.dto';
+import { DeviceSetupPayloadResponseDto } from './dto/setup-payload-response.dto';
 import { isWithinOnlineWindow, resolveLastSeen } from './device-presence';
 
 const DEFAULT_ONLINE_WINDOW_SECONDS = 300;
@@ -71,6 +78,30 @@ export class DevicesService {
       throw new NotFoundException('Device not found');
     }
     return device;
+  }
+
+  async getSetupPayload(id: string, ownerId: string): Promise<DeviceSetupPayloadResponseDto> {
+    // Ownership first: foreign and unknown ids raise the same 404 before anything else is read.
+    const device = await this.findOneForOwner(id, ownerId);
+
+    if (!device.edgeUrl) {
+      throw new BadRequestException('edgeUrl not configured for this device');
+    }
+
+    // Read at request time (same pattern as EDGE_ADMIN_API_KEY). The value must never reach a
+    // logger or an exception message; the 503 text names the variable, not its content.
+    const deviceKey = process.env.EDGE_DEVICE_SHARED_SECRET;
+    if (deviceKey === undefined || deviceKey.trim() === '') {
+      throw new ServiceUnavailableException('Device setup secret is not configured on the server');
+    }
+
+    return {
+      // The firmware appends "/frames" to this base URL, so it must not end with a slash.
+      edgeApiUrl: device.edgeUrl.replace(/\/+$/, ''),
+      deviceKey,
+      deviceId: device.id,
+      zoneId: device.zoneId,
+    };
   }
 
   async update(id: string, dto: UpdateDeviceDto, ownerId: string): Promise<DeviceResponseDto> {

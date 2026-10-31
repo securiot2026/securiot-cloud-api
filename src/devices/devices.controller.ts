@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   HttpCode,
   HttpStatus,
   Param,
@@ -27,6 +28,7 @@ import { CreateRuleDto } from './dto/create-rule.dto';
 import { UpdateRuleDto } from './dto/update-rule.dto';
 import { DryRunRuleDto } from './dto/dry-run-rule.dto';
 import { DeviceCreatedResponseDto, DeviceResponseDto, DeviceStatusResponseDto } from './dto/device-response.dto';
+import { DeviceSetupPayloadResponseDto } from './dto/setup-payload-response.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { JwtPayload } from '../auth/jwt.strategy';
 
@@ -74,6 +76,25 @@ export class DevicesController {
     const user = (req as Request & { user: JwtPayload }).user;
     const device = await this.devicesService.findOneForOwner(id, user.sub);
     return this.devicesService.getStatus(device);
+  }
+
+  @Get(':id/setup-payload')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Header('Cache-Control', 'no-store')
+  @ApiOperation({
+    summary: 'Get the values the device captive portal needs, to render the one-time setup QR',
+    description:
+      'Returns the Edge API URL, the shared device secret, the device id and the zone id. The response carries a secret and is owner scoped: only the owner of the device can read it. Never cached.',
+  })
+  @ApiResponse({ status: 200, description: 'Setup payload for the device', type: DeviceSetupPayloadResponseDto })
+  @ApiResponse({ status: 400, description: 'edgeUrl not configured for this device' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({ status: 404, description: 'Device not found or not owned by the authenticated user' })
+  @ApiResponse({ status: 503, description: 'Device setup secret not configured on the server' })
+  getSetupPayload(@Param('id') id: string, @Req() req: Request): Promise<DeviceSetupPayloadResponseDto> {
+    const user = (req as Request & { user: JwtPayload }).user;
+    return this.devicesService.getSetupPayload(id, user.sub);
   }
 
   @Patch(':id')
