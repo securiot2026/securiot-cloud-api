@@ -18,6 +18,7 @@ describe('Telemetry (e2e)', () => {
   let deviceB: Device;
   let jwt: string;
   let alertRepo: Repository<Alert>;
+  let deviceRepo: Repository<Device>;
 
   beforeAll(async () => {
     process.env.DB_DRIVER = 'sqlite';
@@ -36,7 +37,7 @@ describe('Telemetry (e2e)', () => {
     await app.init();
 
     const zoneRepo = moduleFixture.get<Repository<Zone>>(getRepositoryToken(Zone));
-    const deviceRepo = moduleFixture.get<Repository<Device>>(getRepositoryToken(Device));
+    deviceRepo = moduleFixture.get<Repository<Device>>(getRepositoryToken(Device));
     const userRepo = moduleFixture.get<Repository<User>>(getRepositoryToken(User));
     alertRepo = moduleFixture.get<Repository<Alert>>(getRepositoryToken(Alert));
 
@@ -258,5 +259,69 @@ describe('Telemetry (e2e)', () => {
 
     const alerts = await alertRepo.find({ where: { readingId: first.body.id } });
     expect(alerts).toHaveLength(1);
+  });
+  describe('heartbeat (D-06: presence without a Reading)', () => {
+    const postHeartbeat = (key: string | null, recordedAt: string, readingId: string) => {
+      const req = request(app.getHttpServer()).post('/api/v1/telemetry');
+      if (key) req.set('X-Device-Key', key);
+      return req.send({
+        reading_id: readingId,
+        sensor_type: 'heartbeat',
+        value: 'alive',
+        recorded_at: recordedAt,
+      });
+    };
+
+    it('sets lastSeenAt on the owning device and creates no Reading row', async () => {
+      const seen = new Date(Date.now() - 5000);
+      const response = await postHeartbeat('valid-api-key-b', seen.toISOString(), 'hb-1');
+
+      expect(response.status).toBe(201);
+
+      const refreshed = await deviceRepo.findOneOrFail({ where: { id: deviceB.id } });
+      expect(refreshed.lastSeenAt).not.toBeNull();
+      expect(refreshed.lastSeenAt?.getTime()).toBe(seen.getTime());
+
+      const list = await request(app.getHttpServer())
+        .get(`/api/v1/telemetry?device_id=${deviceB.id}`)
+        .set('Authorization', `Bearer ${jwt}`);
+      expect(list.body.some((r: { sensorType: string }) => r.sensorType === 'heartbeat')).toBe(false);
+      expect(list.body.some((r: { readingId: string }) => r.readingId === 'hb-1')).toBe(false);
+    });
+
+    it('never moves lastSeenAt backwards', async () => {
+      const newer = new Date(Date.now() - 2000);
+      await postHeartbeat('valid-api-key-b', newer.toISOString(), 'hb-newer');
+      const older = new Date(Date.now() - 600000);
+      const response = await postHeartbeat('valid-api-key-b', older.toISOString(), 'hb-older');
+
+      expect(response.status).toBe(201);
+      const refreshed = await deviceRepo.findOneOrFail({ where: { id: deviceB.id } });
+      expect(refreshed.lastSeenAt?.getTime()).toBe(newer.getTime());
+    });
+
+    it('clamps a future recorded_at to the server time', async () => {
+      const before = Date.now();
+      const future = new Date(Date.now() + 3600 * 1000);
+      const response = await postHeartbeat('valid-api-key', future.toISOString(), 'hb-future');
+
+      expect(response.status).toBe(201);
+      const after = Date.now();
+      const refreshed = await deviceRepo.findOneOrFail({ where: { id: device.id } });
+      expect(refreshed.lastSeenAt).not.toBeNull();
+      const t = refreshed.lastSeenAt!.getTime();
+      expect(t).toBeGreaterThanOrEqual(before - 1000);
+      expect(t).toBeLessThanOrEqual(after + 1000);
+    });
+
+    it('rejects a heartbeat without X-Device-Key with 401', async () => {
+      const response = await postHeartbeat(null, new Date().toISOString(), 'hb-nokey');
+      expect(response.status).toBe(401);
+    });
+
+    it('rejects a heartbeat with an invalid X-Device-Key with 401', async () => {
+      const response = await postHeartbeat('bogus', new Date().toISOString(), 'hb-badkey');
+      expect(response.status).toBe(401);
+    });
   });
 });

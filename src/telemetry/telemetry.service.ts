@@ -7,15 +7,29 @@ import { QueryReadingsDto } from './dto/query-readings.dto';
 import { Device } from '../devices/device.entity';
 import { AlertsService } from '../alerts/alerts.service';
 
+export const HEARTBEAT_SENSOR_TYPE = 'heartbeat';
+
+export interface HeartbeatAck {
+  heartbeat: true;
+  deviceId: string;
+  lastSeenAt: Date;
+}
+
 @Injectable()
 export class TelemetryService {
   constructor(
     @InjectRepository(Reading)
     private readonly readingsRepository: Repository<Reading>,
+    @InjectRepository(Device)
+    private readonly devicesRepository: Repository<Device>,
     private readonly alertsService: AlertsService,
   ) {}
 
-  async ingest(dto: CreateReadingDto, device: Device): Promise<Reading> {
+  async ingest(dto: CreateReadingDto, device: Device): Promise<Reading | HeartbeatAck> {
+    if (dto.sensor_type === HEARTBEAT_SENSOR_TYPE) {
+      return this.recordHeartbeat(dto, device);
+    }
+
     await this.readingsRepository
       .createQueryBuilder()
       .insert()
@@ -38,6 +52,31 @@ export class TelemetryService {
     await this.alertsService.evaluateRule(reading);
 
     return reading;
+  }
+
+  /**
+   * D-06: a heartbeat only refreshes Device.lastSeenAt. It is never stored as a Reading
+   * and never reaches the alerts service. The effective time is the earlier of the
+   * client-supplied recorded_at and the server clock (future timestamps are clamped),
+   * and lastSeenAt never moves backwards.
+   */
+  private async recordHeartbeat(dto: CreateReadingDto, device: Device): Promise<HeartbeatAck> {
+    const nowMs = Date.now();
+    const claimedMs = new Date(dto.recorded_at).getTime();
+    const effective = new Date(Number.isNaN(claimedMs) ? nowMs : Math.min(claimedMs, nowMs));
+
+    const current = await this.devicesRepository.findOne({
+      where: { id: device.id },
+      select: { id: true, lastSeenAt: true },
+    });
+    const stored = current?.lastSeenAt ? new Date(current.lastSeenAt) : null;
+
+    if (!stored || effective.getTime() > stored.getTime()) {
+      await this.devicesRepository.update({ id: device.id }, { lastSeenAt: effective });
+      return { heartbeat: true, deviceId: device.id, lastSeenAt: effective };
+    }
+
+    return { heartbeat: true, deviceId: device.id, lastSeenAt: stored };
   }
 
   findAll(query: QueryReadingsDto): Promise<Reading[]> {
