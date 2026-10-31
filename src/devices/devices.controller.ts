@@ -177,9 +177,9 @@ export class DevicesController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({
-    summary: 'Queue a manual command (pan/tilt, light, or buzzer) for the device, proxied to its Edge API',
+    summary: 'Queue a manual command (pan/tilt, light, buzzer, or door open/close) for the device, proxied to its Edge API',
     description:
-      "Delivered on the device's next /frames poll (~2s), expires if not delivered in time, and temporarily suppresses the matching automatic action on the same actuator.",
+      "Delivered on the device's next /frames poll (~2s), expires if not delivered in time, and temporarily suppresses the matching automatic action on the same actuator. For the door, action is {state: 'open' | 'close'} and a delivered door command temporarily suppresses the automatic door lock.",
   })
   @ApiResponse({ status: 201, description: 'Command queued' })
   @ApiResponse({ status: 400, description: 'Validation failed, or edgeUrl not configured for this device' })

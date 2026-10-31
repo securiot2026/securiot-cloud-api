@@ -205,8 +205,8 @@ export class DevicesService {
   async getCommandStatus(id: string, ownerId: string, actuator: string, res: Response): Promise<void> {
     const device = await this.findOneForOwner(id, ownerId);
 
-    if (!['pan_tilt', 'light', 'buzzer'].includes(actuator)) {
-      res.status(400).json({ error: 'actuator must be one of pan_tilt, light, buzzer' });
+    if (!['pan_tilt', 'light', 'buzzer', 'door'].includes(actuator)) {
+      res.status(400).json({ error: 'actuator must be one of pan_tilt, light, buzzer, door' });
       return;
     }
 
