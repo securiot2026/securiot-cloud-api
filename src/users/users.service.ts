@@ -14,6 +14,10 @@ export class UsersService {
     return this.usersRepository.findOne({ where: { email } });
   }
 
+  async updatePasswordHash(userId: string, passwordHash: string): Promise<void> {
+    await this.usersRepository.update({ id: userId }, { passwordHash });
+  }
+
   create(email: string, passwordHash: string): Promise<User> {
     const user = this.usersRepository.create({ email, passwordHash });
     return this.usersRepository.save(user);
