@@ -22,7 +22,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint --if-present
-      - run: npm test --if-present -- --ci
+      - run: npm test -- --ci --passWithNoTests
+      - run: npm run test:e2e
       - run: npm run build
       - name: Docker image builds (same lockfile check the VPS does)
         run: docker build -t securiot-cloud-api:ci .
