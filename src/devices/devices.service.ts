@@ -80,6 +80,14 @@ export class DevicesService {
     return device;
   }
 
+  async rotateApiKey(id: string, ownerId: string): Promise<DeviceCreatedResponseDto> {
+    // Ownership first: foreign and unknown ids raise the same 404.
+    const device = await this.findOneForOwner(id, ownerId);
+    device.apiKey = crypto.randomBytes(24).toString('hex');
+    const saved = await this.devicesRepository.save(device);
+    return this.toCreatedResponse(saved);
+  }
+
   async getSetupPayload(id: string, ownerId: string): Promise<DeviceSetupPayloadResponseDto> {
     // Ownership first: foreign and unknown ids raise the same 404 before anything else is read.
     const device = await this.findOneForOwner(id, ownerId);

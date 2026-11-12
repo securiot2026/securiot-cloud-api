@@ -78,6 +78,24 @@ export class DevicesController {
     return this.devicesService.getStatus(device);
   }
 
+  @Post(':id/rotate-key')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'no-store')
+  @ApiOperation({
+    summary: 'Replace the device API key with a new random one',
+    description:
+      'The new apiKey is shown in full only in this response and is never returned again. The old key stops working immediately, so the Edge must be updated with the new one. Owner scoped.',
+  })
+  @ApiResponse({ status: 200, description: 'Key rotated, new apiKey shown once' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({ status: 404, description: 'Device not found or not owned by the authenticated user' })
+  rotateKey(@Param('id') id: string, @Req() req: Request): Promise<DeviceCreatedResponseDto> {
+    const user = (req as Request & { user: JwtPayload }).user;
+    return this.devicesService.rotateApiKey(id, user.sub);
+  }
+
   @Get(':id/setup-payload')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
