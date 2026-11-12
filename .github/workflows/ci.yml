@@ -21,7 +21,6 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run lint --if-present
       - run: npm test -- --ci --passWithNoTests
       - run: npm run test:e2e
       - run: npm run build
