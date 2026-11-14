@@ -70,3 +70,39 @@ address (a Cloudflare tunnel hostname), not a LAN IP. Loopback and link local
 hosts are rejected. The Setup QR reuses this value for the board, so the board
 posts to the same URL unless you provision it with a LAN address.
 See the Edge repo `docs/LOCAL_DEPLOYMENT.md`.
+
+## Billing (simulated gateway)
+
+The `billing` module is a classroom simulation. **Nothing is ever charged.** No payment processor is called and no
+real card is processed. The `PaymentGatewaySimulator` service only recognises the four test card numbers below. Any
+other number, including a real card, is declined with `unknown_test_card`.
+
+Endpoints, all under `/api/v1`:
+
+| Endpoint | Auth | Result |
+| --- | --- | --- |
+| `GET /billing/plans` | none | `{ currency: "PEN", igvRate: 0.18, plans[] }` |
+| `POST /billing/checkout` | JWT | `201 { payment, subscription }` approved, `402 { payment }` declined (no subscription), `409` if an active subscription exists (checked before charging), `400` on validation errors |
+| `GET /billing/subscription` | JWT | `{ subscription \| null, payments[] }`, newest first, own data only |
+| `POST /billing/subscription/cancel` | JWT | `200` with the canceled subscription, `404` if none |
+
+The first charge is `cameras x (installFeePerCamera + monthlyPerCamera)` as subtotal, plus 18 percent IGV rounded to
+2 decimals. Plans live in code (`src/billing/plans.ts`). Checkout body:
+`{ planId: "basic" | "standard" | "plus", cameras: 1..8, card: { number, holder, expMonth, expYear, cvc } }`.
+
+Test cards (spaces and dashes are ignored):
+
+| Number | Outcome |
+| --- | --- |
+| `4242 4242 4242 4242` | Approved |
+| `4000 0000 0000 0002` | Declined, `card_declined` |
+| `4000 0000 0000 9995` | Declined, `insufficient_funds` |
+| `4000 0000 0000 0069` | Declined, `expired_card` |
+| anything else | Declined, `unknown_test_card` |
+
+Card data: the number, the holder and the cvc are never stored and never logged. Only the brand (`visa`,
+`mastercard`, `unknown`, by prefix) and the last 4 digits are saved, in the `payments` table. Subscriptions are in
+`subscriptions`. Both tables are created by DB sync on the next start.
+
+Latency: each charge waits a random 600 to 1200 ms to look like a real gateway. Set `BILLING_SIMULATED_LATENCY_MS`
+to a fixed number of milliseconds to change it, or to `0` to disable it. The test setup (`test/setup-env.ts`) sets `0`.
