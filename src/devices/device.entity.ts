@@ -28,6 +28,13 @@ export class Device {
   @Column()
   zoneId: string;
 
+  @Column({ type: 'varchar', nullable: true })
+  edgeUrl: string | null;
+
+  /** Last heartbeat received from the Edge (D-06). Null until the device reports. */
+  @Column({ type: Date, nullable: true })
+  lastSeenAt: Date | null;
+
   @CreateDateColumn()
   createdAt: Date;
 }

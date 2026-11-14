@@ -36,6 +36,9 @@ DB_USER=postgres
 DB_PASSWORD=postgres
 DB_NAME=securiot
 
+# Billing simulator latency in ms. Unset: random 600 to 1200 ms per charge. Tests use 0.
+BILLING_SIMULATED_LATENCY_MS=
+
 # Used only when DB_DRIVER=sqlite
 DB_SQLITE_PATH=./data/securiot.sqlite
 
@@ -57,6 +60,24 @@ PORT=3000
 # Device online/offline window: a device is "online" if it has a Reading
 # within this many seconds. Optional, defaults to 300 if unset.
 DEVICE_ONLINE_WINDOW_SECONDS=300
+
+# Password reset by email (Resend). Plain REST, no SDK.
+# Resend API key. Leave empty for dev mode: nothing is sent and, by default, nothing
+# sensitive is logged. Never commit a real key.
+RESEND_API_KEY=
+# Dev mode only (RESEND_API_KEY empty): set to 1 to log the full email, including the
+# reset link, at WARN. Off by default so a link never ends up in logs by accident.
+MAIL_DEV_LOG=
+# Sender. The Resend sandbox sender only delivers to the Resend account owner address.
+RESEND_FROM=onboarding@resend.dev
+# Mailbox that receives every password reset link, because the seeded login
+# test@securiot.local is not a real mailbox. It must equal the Resend account email while
+# the sandbox sender is used. When unset the reset email is disabled.
+# The same address also receives a short email whenever the alerts engine creates a new alert
+# (throttled to one per device and alert type per 10 minutes). Nothing is sent when unset.
+ADMIN_EMAIL=juancarlosanguloabud@gmail.com
+# Base URL of the Web App used to build the reset link. http or https only, no credentials.
+WEB_APP_URL=http://localhost:4200
 ```
 
 If you don't have Postgres installed locally, set `DB_DRIVER=sqlite` and `DB_SQLITE_PATH` to any local file path (e.g. `./data/securiot.sqlite`) - no server setup required.
@@ -82,14 +103,51 @@ Swagger/OpenAPI UI is served at `http://localhost:3000/api/docs`, covering both 
 
 ## Endpoints
 
-All endpoints below live under `/api/v1`. Everything except `POST /auth/login` and telemetry ingest is guarded by a JWT (`Authorization: Bearer <token>`); telemetry ingest is guarded by `X-Device-Key` instead (device API key, not a user JWT).
+All endpoints below live under `/api/v1`. Everything except `POST /auth/login`, the two password reset endpoints and telemetry ingest is guarded by a JWT (`Authorization: Bearer <token>`); telemetry ingest is guarded by `X-Device-Key` instead (device API key, not a user JWT).
 
 - `POST /auth/login` - email/password login, returns `{ access_token }` (JWT, 1h expiry)
+- `POST /auth/forgot-password` - body `{ email }`, always answers `202` with the same body whether or not the account exists; the reset link goes to `ADMIN_EMAIL`, not to the account holder
+- `POST /auth/reset-password` - body `{ token, newPassword }`, answers `200`, or `400` with `code: invalid_reset_token` for any unknown, expired or used token; the new password needs at least 10 characters and at most 72 bytes
 - `POST /zones`, `GET /zones`, `GET /zones/:id`, `PATCH /zones/:id`, `DELETE /zones/:id` - zones owned by the authenticated user
 - `POST /devices`, `GET /devices`, `GET /devices/:id` - devices, each linked to one of the user's zones; the create response is the only place the device's `apiKey` is ever shown in full
 - `POST /telemetry` - ingest a reading, guarded by `X-Device-Key`. Idempotent on `reading_id`: retried POSTs with the same `reading_id` never create a second row
 - `GET /telemetry` - list readings, filterable via `device_id`, `zone_id`, `from`, `to` query params
 - `GET /alerts` - list alerts for the user's zones, filterable via `zone_id`, `device_id`, `status`; generated automatically from telemetry (see "Scope" below)
+- `GET /billing/plans` - public. Fixed plans (basic, standard, plus), currency PEN, prices before IGV (18 percent)
+- `POST /billing/checkout` - SIMULATED payment, nothing is charged. Body `{ planId, cameras (1..8), card }`. `201` with `{ payment, subscription }` when approved, `402` with `{ payment }` when the simulator declines, `409` if an active subscription exists. See "Billing (simulated gateway)" in `docs/OPERATIONS.md` for the test cards
+- `GET /billing/subscription` - the user's active subscription (or `null`) and payments, newest first
+- `POST /billing/subscription/cancel` - cancels the active subscription, `404` if none
+
+## Password reset (admin-mediated)
+
+The seeded login `test@securiot.local` has no real mailbox, so every reset link is sent to `ADMIN_EMAIL`, never to the account holder. The administrator forwards the link only to the owner of the account.
+
+- The link is `WEB_APP_URL/reset-password?token=...`, lasts 30 minutes and works once. Requesting a new link invalidates the older ones.
+- Only the SHA-256 hash of the token is stored (table `password_reset_tokens`, created by DB sync on the next start). The raw token exists only in the email.
+- `WEB_APP_URL` is the only source of the link host. Request headers (`Host`, `Origin`, `X-Forwarded-*`) are never used.
+- Mail goes through the Resend REST API (`RESEND_API_KEY`, `RESEND_FROM`). A mail failure never fails the request. While the sandbox sender `onboarding@resend.dev` is used, Resend only delivers to the Resend account owner, so `ADMIN_EMAIL` must be that address.
+- With `RESEND_API_KEY` unset (dev mode) nothing is sent and only the subject is logged at WARN. To see the reset link in the log, also set `MAIL_DEV_LOG=1`. This does not depend on `NODE_ENV`, and the link is never logged otherwise.
+- Rate limits are in memory and per process: `forgot-password` allows 5 requests per 15 minutes per IP and per email, `reset-password` 10 per 15 minutes per IP. Excess requests get `429` with `Retry-After`. The counters are lost on restart, and behind a reverse proxy every client shares the proxy address because Express `trust proxy` is not enabled.
+- Old JWTs are not revoked: there is no revocation list, so a token issued before a reset stays valid until `JWT_EXPIRES_IN` elapses (1h by default).
+
+## Admin email notifications
+
+When the alerts engine creates a new alert, the Cloud sends a short plain-text email in Spanish to `ADMIN_EMAIL`. It covers two events:
+
+- A `rule_alert` reading that becomes an alert (the Edge rules engine fired a rule).
+- A device going offline (the cron sweep creates the `device_offline` alert).
+
+The email carries only the alert type, severity, message, device id, zone id and a link to the Web alerts page (`WEB_APP_URL/alerts`). It never includes any key or secret.
+
+- Throttle: at most one email per device and alert type every 10 minutes. The throttle is in memory and per process, so it resets on restart. A replayed reading (same `reading_id`) creates no second alert and no email.
+- Sending is asynchronous. A Resend failure, a timeout or a hang never affects telemetry ingest or the offline cron.
+- With `RESEND_API_KEY` unset (dev mode) the email is not sent and only the subject is logged at WARN (the body too when `MAIL_DEV_LOG=1`).
+- With `ADMIN_EMAIL` unset or blank nothing is sent. The alert is still created as usual.
+- While the sandbox sender `onboarding@resend.dev` is used, `ADMIN_EMAIL` must be the Resend account address.
+
+## Operations
+
+GitFlow, CI/CD with Dokploy, device key rotation and the Edge URL are in [`docs/OPERATIONS.md`](docs/OPERATIONS.md).
 
 ## Testing
 

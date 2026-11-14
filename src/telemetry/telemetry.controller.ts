@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiHeader, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Request } from 'express';
-import { TelemetryService } from './telemetry.service';
+import { HeartbeatAck, TelemetryService } from './telemetry.service';
 import { CreateReadingDto } from './dto/create-reading.dto';
 import { QueryReadingsDto } from './dto/query-readings.dto';
 import { DeviceApiKeyGuard } from './guards/device-api-key.guard';
@@ -28,11 +28,11 @@ export class TelemetryController {
   @UseGuards(DeviceApiKeyGuard)
   @HttpCode(HttpStatus.CREATED)
   @ApiHeader({ name: 'X-Device-Key', description: 'Device API key issued at seed time' })
-  @ApiOperation({ summary: 'Ingest a telemetry reading (idempotent on reading_id)' })
-  @ApiResponse({ status: 201, description: 'Reading persisted (or already existed with this reading_id)' })
+  @ApiOperation({ summary: 'Ingest a telemetry reading (idempotent on reading_id). sensor_type heartbeat only refreshes the device last-seen and is not stored as a reading.' })
+  @ApiResponse({ status: 201, description: 'Reading persisted (or already existed with this reading_id); heartbeat acknowledged without creating a reading' })
   @ApiResponse({ status: 400, description: 'Validation failed on request body' })
   @ApiResponse({ status: 401, description: 'Missing or invalid X-Device-Key header' })
-  ingest(@Body() dto: CreateReadingDto, @Req() req: Request): Promise<Reading> {
+  ingest(@Body() dto: CreateReadingDto, @Req() req: Request): Promise<Reading | HeartbeatAck> {
     const device = (req as Request & { device: Device }).device;
     return this.telemetryService.ingest(dto, device);
   }
