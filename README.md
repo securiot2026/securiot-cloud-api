@@ -138,6 +138,10 @@ The email carries only the alert type, severity, message, device id, zone id and
 - With `ADMIN_EMAIL` unset or blank nothing is sent. The alert is still created as usual.
 - While the sandbox sender `onboarding@resend.dev` is used, `ADMIN_EMAIL` must be the Resend account address.
 
+## Operations
+
+GitFlow, CI/CD with Dokploy, device key rotation and the Edge URL are in [`docs/OPERATIONS.md`](docs/OPERATIONS.md).
+
 ## Testing
 
 ```bash
