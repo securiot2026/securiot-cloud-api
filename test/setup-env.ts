@@ -5,3 +5,5 @@
 process.env.RESEND_API_KEY = '';
 process.env.ADMIN_EMAIL = '';
 process.env.MAIL_DEV_LOG = '';
+// The billing simulator waits 600 to 1200 ms per charge by default, no test should.
+process.env.BILLING_SIMULATED_LATENCY_MS = '0';

@@ -9,6 +9,7 @@ import { TelemetryModule } from './telemetry/telemetry.module';
 import { ZonesModule } from './zones/zones.module';
 import { DevicesModule } from './devices/devices.module';
 import { AlertsModule } from './alerts/alerts.module';
+import { BillingModule } from './billing/billing.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { AlertsModule } from './alerts/alerts.module';
     ZonesModule,
     DevicesModule,
     AlertsModule,
+    BillingModule,
   ],
 })
 export class AppModule {}

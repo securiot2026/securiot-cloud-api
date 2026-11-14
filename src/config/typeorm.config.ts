@@ -6,8 +6,10 @@ import { Device } from '../devices/device.entity';
 import { Reading } from '../telemetry/entities/reading.entity';
 import { Alert } from '../alerts/alert.entity';
 import { PasswordResetToken } from '../auth/password-reset-token.entity';
+import { Subscription } from '../billing/subscription.entity';
+import { Payment } from '../billing/payment.entity';
 
-const entities = [User, Zone, Device, Reading, Alert, PasswordResetToken];
+const entities = [User, Zone, Device, Reading, Alert, PasswordResetToken, Subscription, Payment];
 
 export function buildDataSourceOptions(): DataSourceOptions {
   const driver = process.env.DB_DRIVER || 'postgres';

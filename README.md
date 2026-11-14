@@ -36,6 +36,9 @@ DB_USER=postgres
 DB_PASSWORD=postgres
 DB_NAME=securiot
 
+# Billing simulator latency in ms. Unset: random 600 to 1200 ms per charge. Tests use 0.
+BILLING_SIMULATED_LATENCY_MS=
+
 # Used only when DB_DRIVER=sqlite
 DB_SQLITE_PATH=./data/securiot.sqlite
 
@@ -110,6 +113,10 @@ All endpoints below live under `/api/v1`. Everything except `POST /auth/login`, 
 - `POST /telemetry` - ingest a reading, guarded by `X-Device-Key`. Idempotent on `reading_id`: retried POSTs with the same `reading_id` never create a second row
 - `GET /telemetry` - list readings, filterable via `device_id`, `zone_id`, `from`, `to` query params
 - `GET /alerts` - list alerts for the user's zones, filterable via `zone_id`, `device_id`, `status`; generated automatically from telemetry (see "Scope" below)
+- `GET /billing/plans` - public. Fixed plans (basic, standard, plus), currency PEN, prices before IGV (18 percent)
+- `POST /billing/checkout` - SIMULATED payment, nothing is charged. Body `{ planId, cameras (1..8), card }`. `201` with `{ payment, subscription }` when approved, `402` with `{ payment }` when the simulator declines, `409` if an active subscription exists. See "Billing (simulated gateway)" in `docs/OPERATIONS.md` for the test cards
+- `GET /billing/subscription` - the user's active subscription (or `null`) and payments, newest first
+- `POST /billing/subscription/cancel` - cancels the active subscription, `404` if none
 
 ## Password reset (admin-mediated)
 
